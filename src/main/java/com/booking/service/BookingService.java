@@ -15,6 +15,11 @@ import java.util.stream.Collectors;
 public class BookingService {
 
     private final Map<String, Booking> bookings = new LinkedHashMap<>();
+    private final AuditLog auditLog = new AuditLog();
+
+    public AuditLog getAuditLog() {
+        return auditLog;
+    }
 
     // ── Create ──────────────────────────────────────────────────────
 
@@ -24,6 +29,8 @@ public class BookingService {
         }
         Booking booking = new Booking(customerName, date, description);
         bookings.put(booking.getId(), booking);
+        auditLog.log(booking.getId(), AuditLog.Action.CREATED,
+                "Customer: " + customerName + ", Date: " + date);
         return booking;
     }
 
@@ -35,6 +42,7 @@ public class BookingService {
             return false;
         }
         booking.cancel();
+        auditLog.log(id, AuditLog.Action.CANCELLED, "Cancelled by user");
         return true;
     }
 
@@ -78,6 +86,8 @@ public class BookingService {
         if (newDescription != null && !newDescription.isBlank()) {
             booking.setDescription(newDescription);
         }
+        auditLog.log(id, AuditLog.Action.UPDATED,
+                "Date: " + booking.getDate() + ", Desc: " + booking.getDescription());
         return booking;
     }
 
@@ -111,6 +121,7 @@ public class BookingService {
                         b.getStatus());
             }
         }
+        auditLog.log("SYSTEM", AuditLog.Action.EXPORTED, "Exported to " + filePath);
     }
 
     private String escape(String value) {
