@@ -11,8 +11,8 @@ public class Booking {
 
     private final String id;
     private final String customerName;
-    private final LocalDate date;
-    private final String description;
+    private LocalDate date;
+    private String description;
     private Status status;
 
     public Booking(String customerName, LocalDate date, String description) {
@@ -41,6 +41,14 @@ public class Booking {
 
     public Status getStatus() {
         return status;
+    }
+
+    public void setDate(LocalDate date) {
+        this.date = date;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public void cancel() {
