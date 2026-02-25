@@ -1,0 +1,137 @@
+package com.booking.service
+
+import com.booking.model.Booking
+import java.io.FileWriter
+import java.io.PrintWriter
+import java.time.LocalDate
+
+/**
+ * Rich text report generator producing summary, daily schedule, and per-customer reports.
+ *
+ * Reports can be printed to console or saved to a `.txt` file via [saveToFile].
+ */
+class ReportGenerator(private val service: BookingService) {
+
+    // ── Summary Report ───────────────────────────────────────────
+
+    fun generateSummaryReport(): String {
+        val all = service.listBookings()
+        val stats = service.getStatistics()
+        val sb = StringBuilder()
+
+        sb.appendLine("===================================")
+        sb.appendLine("       BOOKING SUMMARY REPORT      ")
+        sb.appendLine("===================================")
+        sb.appendLine("Generated: ${LocalDate.now()}\n")
+
+        sb.appendLine("-- Overview --")
+        sb.appendLine("  Total bookings:     ${stats["total"]}")
+        sb.appendLine("  Confirmed:          ${stats["confirmed"]}")
+        sb.appendLine("  Cancelled:          ${stats["cancelled"]}")
+
+        sb.appendLine("\n-- Top Customers --")
+        all.filter { it.status == Booking.Status.CONFIRMED }
+            .groupingBy { it.customerName }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .forEach { (name, count) ->
+                sb.appendLine("  %-20s %d booking(s)".format(name, count))
+            }
+
+        sb.appendLine("\n-- Busiest Dates --")
+        all.filter { it.status == Booking.Status.CONFIRMED }
+            .groupingBy { it.date }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .forEach { (date, count) ->
+                sb.appendLine("  $date    $count booking(s)")
+            }
+
+        sb.appendLine("\n-- Upcoming (next 7 days) --")
+        val today = LocalDate.now()
+        val weekOut = today.plusDays(7)
+        val upcoming = all
+            .filter { it.status == Booking.Status.CONFIRMED }
+            .filter { !it.date.isBefore(today) && it.date.isBefore(weekOut) }
+            .sortedBy { it.date }
+        if (upcoming.isEmpty()) {
+            sb.appendLine("  (none)")
+        } else {
+            upcoming.forEach { sb.appendLine("  $it") }
+        }
+
+        return sb.toString()
+    }
+
+    // ── Daily Schedule Report ────────────────────────────────────
+
+    fun generateDailySchedule(from: LocalDate, to: LocalDate): String {
+        require(!from.isAfter(to)) { "Invalid date range: from must be on or before to." }
+
+        val sb = StringBuilder()
+
+        sb.appendLine("===================================")
+        sb.appendLine("       DAILY SCHEDULE REPORT       ")
+        sb.appendLine("       $from to $to")
+        sb.appendLine("===================================\n")
+
+        val byDate = service.listBookings()
+            .filter { it.status == Booking.Status.CONFIRMED }
+            .filter { !it.date.isBefore(from) && !it.date.isAfter(to) }
+            .sortedBy { it.date }
+            .groupBy { it.date }
+
+        var cursor = from
+        while (!cursor.isAfter(to)) {
+            sb.appendLine("-- $cursor (${cursor.dayOfWeek}) --")
+            val dayBookings = byDate[cursor] ?: emptyList()
+            if (dayBookings.isEmpty()) {
+                sb.appendLine("  (no bookings)")
+            } else {
+                dayBookings.forEach { sb.appendLine("  $it") }
+            }
+            sb.appendLine()
+            cursor = cursor.plusDays(1)
+        }
+
+        return sb.toString()
+    }
+
+    // ── Customer Report ──────────────────────────────────────────
+
+    fun generateCustomerReport(customerName: String): String {
+        val customerBookings = service.searchByCustomer(customerName)
+        val sb = StringBuilder()
+
+        sb.appendLine("===================================")
+        sb.appendLine("         CUSTOMER REPORT           ")
+        sb.appendLine("         Customer: $customerName")
+        sb.appendLine("===================================\n")
+
+        if (customerBookings.isEmpty()) {
+            sb.appendLine("No bookings found for this customer.")
+            return sb.toString()
+        }
+
+        val confirmed = customerBookings.count { it.status == Booking.Status.CONFIRMED }
+        val cancelled = customerBookings.count { it.status == Booking.Status.CANCELLED }
+
+        sb.appendLine("Total: ${customerBookings.size}  |  Confirmed: $confirmed  |  Cancelled: $cancelled\n")
+
+        customerBookings
+            .sortedBy { it.date }
+            .forEach { sb.appendLine("  $it") }
+
+        return sb.toString()
+    }
+
+    // ── Save report to file ──────────────────────────────────────
+
+    fun saveToFile(report: String, filePath: String) {
+        PrintWriter(FileWriter(filePath)).use { it.print(report) }
+    }
+}

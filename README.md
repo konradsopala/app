@@ -1,24 +1,26 @@
 # Booking System
 
-A command-line booking system built with Java. Supports full booking lifecycle management with validation, audit logging, reporting, and advanced search.
+A command-line booking system built with Kotlin. Supports full booking lifecycle management with validation, audit logging, reporting, and advanced search.
 
 ## Prerequisites
 
-- Java 17+
+- Kotlin 1.9+
+- JDK 17+
 
 ## Build & Run
 
 ```bash
-javac -d out \
-  src/main/java/com/booking/model/Booking.java \
-  src/main/java/com/booking/service/AuditLog.java \
-  src/main/java/com/booking/service/BookingValidator.java \
-  src/main/java/com/booking/service/BookingService.java \
-  src/main/java/com/booking/service/ReportGenerator.java \
-  src/main/java/com/booking/util/BookingFilter.java \
-  src/main/java/com/booking/App.java
+kotlinc \
+  src/main/kotlin/com/booking/model/Booking.kt \
+  src/main/kotlin/com/booking/service/AuditLog.kt \
+  src/main/kotlin/com/booking/service/BookingValidator.kt \
+  src/main/kotlin/com/booking/service/BookingService.kt \
+  src/main/kotlin/com/booking/service/ReportGenerator.kt \
+  src/main/kotlin/com/booking/util/BookingFilter.kt \
+  src/main/kotlin/com/booking/App.kt \
+  -include-runtime -d booking.jar
 
-java -cp out com.booking.App
+java -jar booking.jar
 ```
 
 ## Features
@@ -38,16 +40,16 @@ java -cp out com.booking.App
 
 ## Project Structure
 
-```
-src/main/java/com/booking/
+```text
+src/main/kotlin/com/booking/
 ├── model/
-│   └── Booking.java              # Booking entity with status enum
+│   └── Booking.kt                # Booking entity with status enum
 ├── service/
-│   ├── AuditLog.java             # Immutable event log for all mutations
-│   ├── BookingService.java       # Core CRUD and business logic
-│   ├── BookingValidator.java     # Composable validation rules engine
-│   └── ReportGenerator.java      # Summary, schedule, and customer reports
+│   ├── AuditLog.kt               # Immutable event log for all mutations
+│   ├── BookingService.kt         # Core CRUD and business logic
+│   ├── BookingValidator.kt       # Composable validation rules engine
+│   └── ReportGenerator.kt        # Summary, schedule, and customer reports
 ├── util/
-│   └── BookingFilter.java        # Fluent sort/filter utility
-└── App.java                      # CLI entry point
+│   └── BookingFilter.kt          # Fluent sort/filter utility
+└── App.kt                        # CLI entry point
 ```
