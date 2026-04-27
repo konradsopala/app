@@ -23,7 +23,7 @@ class App {
     private val scanner = Scanner(System.`in`)
 
     fun run() {
-        println("=== Booking System Pro ===")
+        println("=== Booking Manager v2 ===")
 
         while (true) {
             println("""
