@@ -2,6 +2,7 @@ package com.booking
 
 import com.booking.model.Booking
 import com.booking.service.AuditLog
+import com.booking.service.BookingPricer
 import com.booking.service.BookingService
 import com.booking.service.BookingValidator
 import com.booking.service.ReportGenerator
@@ -20,6 +21,7 @@ class App {
     private val service = BookingService()
     private val validator = BookingValidator(service)
     private val reportGenerator = ReportGenerator(service)
+    private val pricer = BookingPricer(service)
     private val scanner = Scanner(System.`in`)
 
     fun run() {
@@ -40,7 +42,8 @@ class App {
                 |10) Advanced search
                 |11) View audit log
                 |12) Booking history
-                |13) Exit
+                |13) Quote price
+                |14) Exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -57,7 +60,8 @@ class App {
                 "10" -> advancedSearch()
                 "11" -> viewAuditLog()
                 "12" -> viewBookingHistory()
-                "13" -> { println("Goodbye!"); return }
+                "13" -> quotePrice()
+                "14" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
@@ -347,5 +351,30 @@ class App {
             println("History for booking $id:")
             history.forEach(::println)
         }
+    }
+
+    // ── 13. Quote price ────────────────────────────────────────────
+
+    private fun quotePrice() {
+        print("Booking ID: ")
+        val id = scanner.nextLine().trim()
+        print("Customer type (REGULAR/VIP/CORPORATE): ")
+        val type = scanner.nextLine().trim()
+        print("Party size: ")
+        val party = scanner.nextLine().trim().toIntOrNull() ?: 1
+        print("Loyalty years: ")
+        val loyalty = scanner.nextLine().trim().toIntOrNull() ?: 0
+        print("Coupon code (blank for none): ")
+        val coupon = scanner.nextLine().trim().ifEmpty { null }
+        print("Prepay? (y/n): ")
+        val prepay = scanner.nextLine().trim().equals("y", ignoreCase = true)
+        print("Season (HIGH/LOW/MID): ")
+        val season = scanner.nextLine().trim()
+        print("Save quote to file? (path or blank): ")
+        val saveTo = scanner.nextLine().trim().ifEmpty { null }
+
+        pricer.calculateAndPrintAndMaybeSave(
+            id, type, party, loyalty, coupon, prepay, season, saveTo
+        )
     }
 }
