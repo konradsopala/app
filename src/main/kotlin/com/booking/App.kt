@@ -5,7 +5,9 @@ import com.booking.service.AuditLog
 import com.booking.service.BookingPricer
 import com.booking.service.BookingService
 import com.booking.service.BookingValidator
+import com.booking.service.RecurringBookingService
 import com.booking.service.ReportGenerator
+import com.booking.service.WaitlistService
 import com.booking.util.BookingFilter
 import java.io.IOException
 import java.time.LocalDate
@@ -23,6 +25,8 @@ class App {
     private val validator = BookingValidator(service)
     private val reportGenerator = ReportGenerator(service)
     private val pricer = BookingPricer(service)
+    private val recurring = RecurringBookingService(service, validator)
+    private val waitlist = WaitlistService(service, validator)
     private val scanner = Scanner(System.`in`)
 
     fun run() {
@@ -45,7 +49,11 @@ class App {
                 |12) Booking history
                 |13) Quote price
                 |14) Set capacity (current: ${service.capacity})
-                |15) Exit
+                |15) Create recurring series
+                |16) Cancel recurring series
+                |17) View waitlist (${waitlist.size()})
+                |18) Remove from waitlist
+                |19) Exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -64,7 +72,11 @@ class App {
                 "12" -> viewBookingHistory()
                 "13" -> quotePrice()
                 "14" -> setCapacity()
-                "15" -> { println("Goodbye!"); return }
+                "15" -> createRecurringSeries()
+                "16" -> cancelRecurringSeries()
+                "17" -> viewWaitlist()
+                "18" -> removeFromWaitlist()
+                "19" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
@@ -105,6 +117,20 @@ class App {
         if (!result.valid) {
             println("Validation failed:")
             result.errors.forEach { println("  - $it") }
+            // Offer waitlist iff the only thing blocking is capacity.
+            val onlyCapacity = result.errors.isNotEmpty() &&
+                result.errors.all { it.contains("Time slot is full") }
+            if (onlyCapacity) {
+                print("\nAdd to waitlist? (y/n): ")
+                if (scanner.nextLine().trim().equals("y", ignoreCase = true)) {
+                    try {
+                        val entry = waitlist.add(name, date, startTime, duration, description)
+                        println("Added to waitlist: $entry")
+                    } catch (e: IllegalArgumentException) {
+                        println("Could not waitlist: ${e.message}")
+                    }
+                }
+            }
             return
         }
 
@@ -138,8 +164,20 @@ class App {
     private fun cancelBooking() {
         print("Booking ID to cancel: ")
         val id = scanner.nextLine().trim()
-        if (service.cancelBooking(id)) println("Booking cancelled.")
-        else println("Booking not found or already cancelled.")
+        if (service.cancelBooking(id)) {
+            println("Booking cancelled.")
+            promoteWaitlistIfAny()
+        } else {
+            println("Booking not found or already cancelled.")
+        }
+    }
+
+    private fun promoteWaitlistIfAny() {
+        val promoted = waitlist.tryPromoteAll()
+        if (promoted.isNotEmpty()) {
+            println("Promoted ${promoted.size} from waitlist:")
+            promoted.forEach { println("  + $it") }
+        }
     }
 
     // ── 5. Search by customer ──────────────────────────────────────
@@ -438,8 +476,103 @@ class App {
         try {
             service.capacity = value
             println("Capacity set to ${service.capacity}.")
+            // A larger capacity may now allow waitlisted entries through.
+            promoteWaitlistIfAny()
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
         }
+    }
+
+    // ── 15. Create recurring series ────────────────────────────────
+
+    private fun createRecurringSeries() {
+        print("Customer name: ")
+        val name = scanner.nextLine().trim()
+
+        print("First date (YYYY-MM-DD): ")
+        val first: LocalDate
+        try {
+            first = LocalDate.parse(scanner.nextLine().trim())
+        } catch (e: DateTimeParseException) {
+            println("Invalid date format."); return
+        }
+
+        print("Start time (HH:MM, 24h): ")
+        val startTime: LocalTime
+        try {
+            startTime = LocalTime.parse(scanner.nextLine().trim())
+        } catch (e: DateTimeParseException) {
+            println("Invalid time format."); return
+        }
+
+        print("Duration in minutes: ")
+        val duration = scanner.nextLine().trim().toIntOrNull()
+        if (duration == null || duration <= 0) {
+            println("Duration must be a positive integer."); return
+        }
+
+        print("Description: ")
+        val description = scanner.nextLine().trim()
+
+        print("Cadence (DAILY/WEEKLY/BIWEEKLY/MONTHLY): ")
+        val cadence: RecurringBookingService.Cadence = try {
+            RecurringBookingService.Cadence.valueOf(scanner.nextLine().trim().uppercase())
+        } catch (e: IllegalArgumentException) {
+            println("Invalid cadence."); return
+        }
+
+        print("Number of occurrences: ")
+        val count = scanner.nextLine().trim().toIntOrNull()
+        if (count == null || count < 1) {
+            println("Count must be a positive integer."); return
+        }
+
+        val r = try {
+            recurring.createSeries(name, first, startTime, duration, description, cadence, count)
+        } catch (e: IllegalArgumentException) {
+            println("Error: ${e.message}"); return
+        }
+
+        println("\nSeries ${r.seriesId}: ${r.created.size} created, ${r.skipped.size} skipped.")
+        r.created.forEach { println("  + $it") }
+        if (r.skipped.isNotEmpty()) {
+            println("Skipped:")
+            r.skipped.forEach { s ->
+                println("  - ${s.date}: ${s.reasons.joinToString("; ")}")
+            }
+        }
+    }
+
+    // ── 16. Cancel recurring series ────────────────────────────────
+
+    private fun cancelRecurringSeries() {
+        print("Series ID: ")
+        val seriesId = scanner.nextLine().trim()
+        if (seriesId.isEmpty()) { println("Series ID cannot be empty."); return }
+
+        val matching = service.findBySeries(seriesId)
+        if (matching.isEmpty()) { println("No bookings found for series $seriesId."); return }
+
+        val cancelled = recurring.cancelSeries(seriesId)
+        println("Cancelled $cancelled booking(s) in series $seriesId.")
+        promoteWaitlistIfAny()
+    }
+
+    // ── 17. View waitlist ──────────────────────────────────────────
+
+    private fun viewWaitlist() {
+        val entries = waitlist.list()
+        if (entries.isEmpty()) { println("Waitlist is empty."); return }
+        println("Waitlist (${entries.size}):")
+        entries.forEachIndexed { i, e -> println("  ${i + 1}. $e") }
+    }
+
+    // ── 18. Remove from waitlist ───────────────────────────────────
+
+    private fun removeFromWaitlist() {
+        print("Waitlist entry ID: ")
+        val id = scanner.nextLine().trim()
+        if (waitlist.remove(id)) println("Removed waitlist entry $id.")
+        else println("Waitlist entry not found.")
     }
 }

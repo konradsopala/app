@@ -12,13 +12,14 @@ class Booking(
     var date: LocalDate,
     var startTime: LocalTime,
     var durationMinutes: Int,
-    var description: String
+    var description: String,
+    val seriesId: String? = null
 ) {
     enum class Status {
         CONFIRMED, CANCELLED
     }
 
-    val id: String = UUID.randomUUID().toString().substring(0, 8)
+    val id: String = UUID.randomUUID().toString()
     var status: Status = Status.CONFIRMED
         private set
 
@@ -40,6 +41,7 @@ class Booking(
 
     override fun toString(): String {
         val priceSuffix = quote?.let { " | $%.2f".format(it.total) } ?: ""
-        return "[$id] $customerName | $date $startTime-$endTime | $description | $status$priceSuffix"
+        val seriesSuffix = seriesId?.let { " | series:$it" } ?: ""
+        return "[$id] $customerName | $date $startTime-$endTime | $description | $status$priceSuffix$seriesSuffix"
     }
 }
