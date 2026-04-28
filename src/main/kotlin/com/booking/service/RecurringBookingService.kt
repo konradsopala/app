@@ -44,7 +44,7 @@ class RecurringBookingService(
     ): Result {
         require(count >= 1) { "Series count must be at least 1." }
 
-        val seriesId = UUID.randomUUID().toString().substring(0, 8)
+        val seriesId = UUID.randomUUID().toString()
         val created = mutableListOf<Booking>()
         val skipped = mutableListOf<Skipped>()
 

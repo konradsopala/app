@@ -19,7 +19,7 @@ class Booking(
         CONFIRMED, CANCELLED
     }
 
-    val id: String = UUID.randomUUID().toString().substring(0, 8)
+    val id: String = UUID.randomUUID().toString()
     var status: Status = Status.CONFIRMED
         private set
 

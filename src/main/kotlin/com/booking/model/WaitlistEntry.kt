@@ -17,7 +17,7 @@ data class WaitlistEntry(
     val startTime: LocalTime,
     val durationMinutes: Int,
     val description: String,
-    val id: String = UUID.randomUUID().toString().substring(0, 8),
+    val id: String = UUID.randomUUID().toString(),
     val addedAt: LocalDateTime = LocalDateTime.now()
 ) {
     val endTime: LocalTime
