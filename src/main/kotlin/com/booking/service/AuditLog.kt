@@ -7,29 +7,33 @@ import java.util.Objects
  * Immutable event log that records all booking mutations with timestamps and details.
  *
  * Supports querying entries by booking ID, action type, and producing aggregated summaries.
+ * The optional [Entry.actor] records which authenticated user performed the action.
  */
 class AuditLog {
 
     enum class Action {
-        CREATED, CANCELLED, UPDATED, EXPORTED, QUOTED
+        CREATED, CANCELLED, UPDATED, EXPORTED, QUOTED, IMPORTED
     }
 
     data class Entry(
         val timestamp: LocalDateTime,
         val bookingId: String,
         val action: Action,
-        val detail: String
+        val detail: String,
+        val actor: String? = null
     ) {
-        override fun toString(): String =
-            "[$timestamp] $bookingId — $action: $detail"
+        override fun toString(): String {
+            val who = if (actor != null) " by $actor" else ""
+            return "[$timestamp] $bookingId — $action$who: $detail"
+        }
     }
 
     private val entries = mutableListOf<Entry>()
 
     // ── Record an event ──────────────────────────────────────────
 
-    fun log(bookingId: String, action: Action, detail: String) {
-        entries.add(Entry(LocalDateTime.now(), bookingId, action, detail))
+    fun log(bookingId: String, action: Action, detail: String, actor: String? = null) {
+        entries.add(Entry(LocalDateTime.now(), bookingId, action, detail, actor))
     }
 
     // ── Query: all entries ───────────────────────────────────────
@@ -59,5 +63,12 @@ class AuditLog {
             sb.append("$count $action, ")
         }
         return if (sb.length > prefixLen) sb.substring(0, sb.length - 2) else "Audit summary: (empty)"
+    }
+
+    // ── Restore (used by PersistenceService) ─────────────────────
+
+    fun restoreEntries(toLoad: List<Entry>) {
+        entries.clear()
+        entries.addAll(toLoad)
     }
 }

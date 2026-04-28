@@ -12,13 +12,14 @@ class Booking(
     var date: LocalDate,
     var startTime: LocalTime,
     var durationMinutes: Int,
-    var description: String
+    var description: String,
+    initialId: String? = null
 ) {
     enum class Status {
         CONFIRMED, CANCELLED
     }
 
-    val id: String = UUID.randomUUID().toString().substring(0, 8)
+    val id: String = initialId ?: UUID.randomUUID().toString().substring(0, 8)
     var status: Status = Status.CONFIRMED
         private set
 

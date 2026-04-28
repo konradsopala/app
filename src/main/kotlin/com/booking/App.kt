@@ -1,12 +1,16 @@
 package com.booking
 
 import com.booking.model.Booking
-import com.booking.service.AuditLog
+import com.booking.model.User
 import com.booking.service.BookingPricer
 import com.booking.service.BookingService
 import com.booking.service.BookingValidator
+import com.booking.service.CsvImporter
+import com.booking.service.PersistenceService
 import com.booking.service.ReportGenerator
+import com.booking.service.UserService
 import com.booking.util.BookingFilter
+import java.io.File
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
@@ -20,15 +24,78 @@ fun main() {
 class App {
 
     private val service = BookingService()
+    private val users = UserService()
     private val validator = BookingValidator(service)
     private val reportGenerator = ReportGenerator(service)
     private val pricer = BookingPricer(service)
+    private val importer = CsvImporter(service, validator)
+    private val persistence = PersistenceService(File("data"), service, users)
     private val scanner = Scanner(System.`in`)
 
     fun run() {
-        println("=== Booking Manager v2 ===")
+        bootstrap()
 
+        if (!loginLoop()) return
+
+        try {
+            menuLoop()
+        } finally {
+            persistence.save()
+        }
+    }
+
+    // ── Bootstrap (load + seed) ────────────────────────────────────
+
+    private fun bootstrap() {
+        try {
+            persistence.load()
+        } catch (e: Exception) {
+            println("Warning: failed to load saved state — starting fresh. (${e.message})")
+        }
+
+        val seeded = users.seedDefaultAdminIfEmpty()
+        if (seeded) {
+            println("No users on file. Seeded default admin (username=admin, password=admin123).")
+            println("Please change this password via 'Manage users' after logging in.")
+        }
+
+        // Persist after every state change.
+        service.onChange = {
+            try {
+                persistence.save()
+            } catch (e: Exception) {
+                println("Warning: persistence save failed — ${e.message}")
+            }
+        }
+    }
+
+    // ── Login ──────────────────────────────────────────────────────
+
+    private fun loginLoop(): Boolean {
+        println("=== Booking Manager v2 ===")
+        repeat(3) { attempt ->
+            print("Username: ")
+            val username = scanner.nextLine().trim()
+            if (username.isEmpty()) return@repeat
+            print("Password: ")
+            val password = scanner.nextLine()
+            val user = users.login(username, password)
+            if (user != null) {
+                service.currentActor = user.username
+                println("Welcome, ${user.username} (${user.role}).")
+                return true
+            }
+            println("Login failed. (${2 - attempt} attempt(s) remaining)")
+        }
+        println("Too many failed attempts. Exiting.")
+        return false
+    }
+
+    // ── Menu loop ──────────────────────────────────────────────────
+
+    private fun menuLoop() {
         while (true) {
+            val isAdmin = users.currentUser?.role == User.Role.ADMIN
             println("""
                 |
                 | 1) Create booking
@@ -41,11 +108,13 @@ class App {
                 | 8) Export to CSV
                 | 9) Generate report
                 |10) Advanced search
-                |11) View audit log
+                |11) View audit log${if (isAdmin) "" else " [admin]"}
                 |12) Booking history
                 |13) Quote price
-                |14) Set capacity (current: ${service.capacity})
-                |15) Exit
+                |14) Set capacity (current: ${service.capacity})${if (isAdmin) "" else " [admin]"}
+                |15) Import bookings from CSV
+                |16) Manage users${if (isAdmin) "" else " [admin]"}
+                |17) Logout & exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -60,14 +129,21 @@ class App {
                 "8"  -> exportToCsv()
                 "9"  -> generateReport()
                 "10" -> advancedSearch()
-                "11" -> viewAuditLog()
+                "11" -> requireAdmin { viewAuditLog() }
                 "12" -> viewBookingHistory()
                 "13" -> quotePrice()
-                "14" -> setCapacity()
-                "15" -> { println("Goodbye!"); return }
+                "14" -> requireAdmin { setCapacity() }
+                "15" -> importFromCsv()
+                "16" -> requireAdmin { manageUsers() }
+                "17" -> { users.logout(); service.currentActor = null; println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
+    }
+
+    private inline fun requireAdmin(block: () -> Unit) {
+        if (users.currentUser?.role == User.Role.ADMIN) block()
+        else println("This action requires admin privileges.")
     }
 
     // ── 1. Create ──────────────────────────────────────────────────
@@ -440,6 +516,88 @@ class App {
             println("Capacity set to ${service.capacity}.")
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
+        }
+    }
+
+    // ── 15. Import from CSV ────────────────────────────────────────
+
+    private fun importFromCsv() {
+        print("CSV path: ")
+        val path = scanner.nextLine().trim()
+        if (path.isEmpty()) { println("Path cannot be empty."); return }
+        val file = File(path)
+        if (!file.isFile) { println("File not found: $path"); return }
+
+        val result = try {
+            importer.import(file)
+        } catch (e: Exception) {
+            println("Import failed: ${e.message}"); return
+        }
+
+        println("Imported ${result.imported.size} booking(s); ${result.failures.size} failure(s).")
+        result.imported.forEach { println("  + $it") }
+        if (result.failures.isNotEmpty()) {
+            println("\nFailures:")
+            result.failures.forEach { f ->
+                println("  line ${f.lineNumber}: ${f.errors.joinToString("; ")}")
+            }
+        }
+    }
+
+    // ── 16. Manage users ───────────────────────────────────────────
+
+    private fun manageUsers() {
+        println("Users:")
+        users.listUsers().forEach { println("  ${it.username} (${it.role})") }
+        println("  a) Add user   b) Remove user   c) Change password   d) Back")
+        print("Choice: ")
+        when (scanner.nextLine().trim().lowercase()) {
+            "a" -> {
+                print("New username: ")
+                val username = scanner.nextLine().trim()
+                print("Password (>= 6 chars): ")
+                val password = scanner.nextLine()
+                print("Role (ADMIN/USER): ")
+                val role = try {
+                    User.Role.valueOf(scanner.nextLine().trim().uppercase())
+                } catch (e: IllegalArgumentException) {
+                    println("Invalid role."); return
+                }
+                try {
+                    users.addUser(username, password, role)
+                    persistence.save()
+                    println("User $username added.")
+                } catch (e: IllegalArgumentException) {
+                    println("Error: ${e.message}")
+                }
+            }
+            "b" -> {
+                print("Username to remove: ")
+                val username = scanner.nextLine().trim()
+                if (users.removeUser(username)) {
+                    persistence.save()
+                    println("Removed.")
+                } else {
+                    println("Cannot remove (not found, or it's the current user).")
+                }
+            }
+            "c" -> {
+                print("Username: ")
+                val username = scanner.nextLine().trim()
+                print("New password (>= 6 chars): ")
+                val newPassword = scanner.nextLine()
+                try {
+                    if (users.changePassword(username, newPassword)) {
+                        persistence.save()
+                        println("Password updated.")
+                    } else {
+                        println("User not found.")
+                    }
+                } catch (e: IllegalArgumentException) {
+                    println("Error: ${e.message}")
+                }
+            }
+            else -> {}
         }
     }
 }

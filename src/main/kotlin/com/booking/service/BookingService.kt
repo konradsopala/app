@@ -10,8 +10,10 @@ import java.time.LocalTime
 /**
  * Core service handling all booking CRUD operations and business logic.
  *
- * Backed by in-memory storage with insertion-order preservation.
- * All mutations are recorded in the embedded [AuditLog].
+ * Backed by in-memory storage with insertion-order preservation. All mutations
+ * are recorded in the embedded [AuditLog] (tagged with [currentActor]) and the
+ * optional [onChange] hook fires after every state change so callers (e.g.
+ * [PersistenceService]) can persist the new state.
  *
  * [capacity] is the maximum number of confirmed bookings whose time windows
  * may overlap on the same day. Default 1 models a single resource.
@@ -21,10 +23,17 @@ class BookingService {
     private val bookings = linkedMapOf<String, Booking>()
     val auditLog = AuditLog()
 
+    /** Username of the actor performing operations; tagged into audit entries. */
+    var currentActor: String? = null
+
+    /** Fires after every state-changing operation. Set by callers that need to persist. */
+    var onChange: (() -> Unit)? = null
+
     var capacity: Int = 1
         set(value) {
             require(value >= 1) { "Capacity must be at least 1." }
             field = value
+            onChange?.invoke()
         }
 
     // ── Create ──────────────────────────────────────────────────────
@@ -42,8 +51,10 @@ class BookingService {
         bookings[booking.id] = booking
         auditLog.log(
             booking.id, AuditLog.Action.CREATED,
-            "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}"
+            "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}",
+            currentActor
         )
+        onChange?.invoke()
         return booking
     }
 
@@ -53,7 +64,8 @@ class BookingService {
         val booking = bookings[id] ?: return false
         if (booking.status == Booking.Status.CANCELLED) return false
         booking.cancel()
-        auditLog.log(id, AuditLog.Action.CANCELLED, "Cancelled by user")
+        auditLog.log(id, AuditLog.Action.CANCELLED, "Cancelled by user", currentActor)
+        onChange?.invoke()
         return true
     }
 
@@ -100,8 +112,10 @@ class BookingService {
         }
         auditLog.log(
             id, AuditLog.Action.UPDATED,
-            "Date: ${booking.date} ${booking.startTime}-${booking.endTime}, Desc: ${booking.description}"
+            "Date: ${booking.date} ${booking.startTime}-${booking.endTime}, Desc: ${booking.description}",
+            currentActor
         )
+        onChange?.invoke()
         return booking
     }
 
@@ -135,8 +149,10 @@ class BookingService {
         booking.quote = quote
         auditLog.log(
             id, AuditLog.Action.QUOTED,
-            "Total: $%.2f, Type: ${quote.customerType}, Party: ${quote.partySize}".format(quote.total)
+            "Total: $%.2f, Type: ${quote.customerType}, Party: ${quote.partySize}".format(quote.total),
+            currentActor
         )
+        onChange?.invoke()
         return booking
     }
 
@@ -170,7 +186,7 @@ class BookingService {
                 )
             }
         }
-        auditLog.log("SYSTEM", AuditLog.Action.EXPORTED, "Exported to $filePath")
+        auditLog.log("SYSTEM", AuditLog.Action.EXPORTED, "Exported to $filePath", currentActor)
     }
 
     private fun escape(value: String): String {
@@ -179,5 +195,23 @@ class BookingService {
         } else {
             value
         }
+    }
+
+    // ── Restore (used by PersistenceService) ────────────────────────
+
+    /**
+     * Inserts a [Booking] reconstructed from disk, applying its persisted
+     * status and quote. Does not log to the audit log or fire [onChange] —
+     * persistence reload should not generate new history.
+     */
+    fun restoreBooking(booking: Booking, isCancelled: Boolean, quote: Quote?) {
+        bookings[booking.id] = booking
+        if (isCancelled) booking.cancel()
+        if (quote != null) booking.quote = quote
+    }
+
+    /** Clears all bookings without firing the change hook. */
+    internal fun clearAllForRestore() {
+        bookings.clear()
     }
 }
