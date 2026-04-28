@@ -28,6 +28,8 @@ class ReportGenerator(private val service: BookingService) {
         sb.appendLine("  Total bookings:     ${stats["total"]}")
         sb.appendLine("  Confirmed:          ${stats["confirmed"]}")
         sb.appendLine("  Cancelled:          ${stats["cancelled"]}")
+        sb.appendLine("  Capacity:           ${service.capacity}")
+        sb.appendLine("  Quoted revenue:     $%.2f".format(service.totalQuotedRevenue()))
 
         sb.appendLine("\n-- Top Customers --")
         all.filter { it.status == Booking.Status.CONFIRMED }

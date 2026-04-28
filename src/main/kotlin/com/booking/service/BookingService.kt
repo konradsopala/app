@@ -1,29 +1,49 @@
 package com.booking.service
 
 import com.booking.model.Booking
+import com.booking.model.Quote
 import java.io.FileWriter
 import java.io.PrintWriter
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * Core service handling all booking CRUD operations and business logic.
  *
  * Backed by in-memory storage with insertion-order preservation.
  * All mutations are recorded in the embedded [AuditLog].
+ *
+ * [capacity] is the maximum number of confirmed bookings whose time windows
+ * may overlap on the same day. Default 1 models a single resource.
  */
 class BookingService {
 
     private val bookings = linkedMapOf<String, Booking>()
     val auditLog = AuditLog()
 
+    var capacity: Int = 1
+        set(value) {
+            require(value >= 1) { "Capacity must be at least 1." }
+            field = value
+        }
+
     // ── Create ──────────────────────────────────────────────────────
 
-    fun createBooking(customerName: String, date: LocalDate, description: String): Booking {
+    fun createBooking(
+        customerName: String,
+        date: LocalDate,
+        startTime: LocalTime,
+        durationMinutes: Int,
+        description: String
+    ): Booking {
         require(!date.isBefore(LocalDate.now())) { "Booking date cannot be in the past." }
-        val booking = Booking(customerName, date, description)
+        require(durationMinutes > 0) { "Duration must be positive." }
+        val booking = Booking(customerName, date, startTime, durationMinutes, description)
         bookings[booking.id] = booking
-        auditLog.log(booking.id, AuditLog.Action.CREATED,
-            "Customer: $customerName, Date: $date")
+        auditLog.log(
+            booking.id, AuditLog.Action.CREATED,
+            "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}"
+        )
         return booking
     }
 
@@ -54,7 +74,13 @@ class BookingService {
 
     // ── Update / reschedule ─────────────────────────────────────────
 
-    fun updateBooking(id: String, newDate: LocalDate?, newDescription: String?): Booking {
+    fun updateBooking(
+        id: String,
+        newDate: LocalDate?,
+        newStartTime: LocalTime?,
+        newDurationMinutes: Int?,
+        newDescription: String?
+    ): Booking {
         val booking = bookings[id]
             ?: throw IllegalArgumentException("Booking not found.")
         check(booking.status != Booking.Status.CANCELLED) { "Cannot update a cancelled booking." }
@@ -62,11 +88,55 @@ class BookingService {
             require(!newDate.isBefore(LocalDate.now())) { "New date cannot be in the past." }
             booking.date = newDate
         }
+        if (newStartTime != null) {
+            booking.startTime = newStartTime
+        }
+        if (newDurationMinutes != null) {
+            require(newDurationMinutes > 0) { "Duration must be positive." }
+            booking.durationMinutes = newDurationMinutes
+        }
         if (!newDescription.isNullOrBlank()) {
             booking.description = newDescription
         }
-        auditLog.log(id, AuditLog.Action.UPDATED,
-            "Date: ${booking.date}, Desc: ${booking.description}")
+        auditLog.log(
+            id, AuditLog.Action.UPDATED,
+            "Date: ${booking.date} ${booking.startTime}-${booking.endTime}, Desc: ${booking.description}"
+        )
+        return booking
+    }
+
+    // ── Capacity / overlap helpers ──────────────────────────────────
+
+    /**
+     * Returns confirmed bookings whose time window on [date] overlaps the
+     * window [start, start + durationMinutes]. The [excludeId] is skipped so
+     * the same booking can be checked when rescheduling itself.
+     */
+    fun overlappingBookings(
+        date: LocalDate,
+        start: LocalTime,
+        durationMinutes: Int,
+        excludeId: String? = null
+    ): List<Booking> {
+        val end = start.plusMinutes(durationMinutes.toLong())
+        return bookings.values.filter { b ->
+            b.id != excludeId &&
+                b.status == Booking.Status.CONFIRMED &&
+                b.date == date &&
+                b.startTime < end && start < b.endTime
+        }
+    }
+
+    // ── Quote attachment ────────────────────────────────────────────
+
+    fun attachQuote(id: String, quote: Quote): Booking {
+        val booking = bookings[id]
+            ?: throw IllegalArgumentException("Booking not found.")
+        booking.quote = quote
+        auditLog.log(
+            id, AuditLog.Action.QUOTED,
+            "Total: $%.2f, Type: ${quote.customerType}, Party: ${quote.partySize}".format(quote.total)
+        )
         return booking
     }
 
@@ -79,16 +149,24 @@ class BookingService {
         return linkedMapOf("total" to total, "confirmed" to confirmed, "cancelled" to cancelled)
     }
 
+    /** Sum of attached quote totals for confirmed bookings. */
+    fun totalQuotedRevenue(): Double =
+        bookings.values
+            .filter { it.status == Booking.Status.CONFIRMED }
+            .sumOf { it.quote?.total ?: 0.0 }
+
     // ── Export to CSV ───────────────────────────────────────────────
 
     fun exportToCsv(filePath: String) {
         PrintWriter(FileWriter(filePath)).use { writer ->
-            writer.println("id,customer,date,description,status")
+            writer.println("id,customer,date,start,end,description,status,quote_total")
             for (b in bookings.values) {
+                val quoteTotal = b.quote?.let { "%.2f".format(it.total) } ?: ""
                 writer.printf(
-                    "%s,%s,%s,%s,%s%n",
+                    "%s,%s,%s,%s,%s,%s,%s,%s%n",
                     escape(b.id), escape(b.customerName),
-                    b.date, escape(b.description), b.status
+                    b.date, b.startTime, b.endTime,
+                    escape(b.description), b.status, quoteTotal
                 )
             }
         }
