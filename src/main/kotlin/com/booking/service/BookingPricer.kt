@@ -1,6 +1,7 @@
 package com.booking.service
 
 import com.booking.model.Booking
+import com.booking.model.Quote
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -225,6 +226,19 @@ class BookingPricer(private val service: BookingService) {
         if (price < 25.0) price = 25.0
 
         val rounded = (Math.round(price * 100.0)) / 100.0
+
+        service.attachQuote(
+            b.id,
+            Quote(
+                total = rounded,
+                customerType = normalizedCustomerType,
+                partySize = partySize,
+                loyaltyYears = loyaltyYears,
+                couponCode = couponCode,
+                prepay = prepay,
+                season = normalizedSeason
+            )
+        )
 
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         val out = StringBuilder()

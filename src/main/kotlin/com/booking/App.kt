@@ -9,6 +9,7 @@ import com.booking.service.ReportGenerator
 import com.booking.util.BookingFilter
 import java.io.IOException
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeParseException
 import java.util.Scanner
 
@@ -43,7 +44,8 @@ class App {
                 |11) View audit log
                 |12) Booking history
                 |13) Quote price
-                |14) Exit
+                |14) Set capacity (current: ${service.capacity})
+                |15) Exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -61,7 +63,8 @@ class App {
                 "11" -> viewAuditLog()
                 "12" -> viewBookingHistory()
                 "13" -> quotePrice()
-                "14" -> { println("Goodbye!"); return }
+                "14" -> setCapacity()
+                "15" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
@@ -81,21 +84,32 @@ class App {
             println("Invalid date format."); return
         }
 
+        print("Start time (HH:MM, 24h): ")
+        val startTime: LocalTime
+        try {
+            startTime = LocalTime.parse(scanner.nextLine().trim())
+        } catch (e: DateTimeParseException) {
+            println("Invalid time format."); return
+        }
+
+        print("Duration in minutes: ")
+        val duration = scanner.nextLine().trim().toIntOrNull()
+        if (duration == null || duration <= 0) {
+            println("Duration must be a positive integer."); return
+        }
+
         print("Description: ")
         val description = scanner.nextLine().trim()
 
-        val result = validator.validateNewBooking(name, date, description)
+        val result = validator.validateNewBooking(name, date, startTime, duration, description)
         if (!result.valid) {
             println("Validation failed:")
             result.errors.forEach { println("  - $it") }
             return
         }
 
-        // Defense-in-depth: validator.validateNewBooking already rejects past dates, but
-        // BookingService.createBooking also enforces the same check and may throw
-        // IllegalArgumentException to protect against race conditions or future multi-user scenarios.
         try {
-            val booking = service.createBooking(name, date, description)
+            val booking = service.createBooking(name, date, startTime, duration, description)
             println("Booking created: $booking")
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
@@ -160,7 +174,28 @@ class App {
             }
         }
 
-        val result = validator.validateUpdate(newDate)
+        print("New start time (HH:MM, leave blank to keep): ")
+        val timeInput = scanner.nextLine().trim()
+        var newStartTime: LocalTime? = null
+        if (timeInput.isNotEmpty()) {
+            try {
+                newStartTime = LocalTime.parse(timeInput)
+            } catch (e: DateTimeParseException) {
+                println("Invalid time format."); return
+            }
+        }
+
+        print("New duration minutes (leave blank to keep): ")
+        val durationInput = scanner.nextLine().trim()
+        var newDuration: Int? = null
+        if (durationInput.isNotEmpty()) {
+            newDuration = durationInput.toIntOrNull()
+            if (newDuration == null || newDuration <= 0) {
+                println("Duration must be a positive integer."); return
+            }
+        }
+
+        val result = validator.validateUpdate(id, newDate, newStartTime, newDuration)
         if (!result.valid) {
             println("Validation failed:")
             result.errors.forEach { println("  - $it") }
@@ -171,7 +206,7 @@ class App {
         val newDescription = scanner.nextLine().trim()
 
         try {
-            val updated = service.updateBooking(id, newDate, newDescription)
+            val updated = service.updateBooking(id, newDate, newStartTime, newDuration, newDescription)
             println("Booking updated: $updated")
         } catch (e: Exception) {
             println("Error: ${e.message}")
@@ -186,6 +221,8 @@ class App {
         println("Total:     ${stats["total"]}")
         println("Confirmed: ${stats["confirmed"]}")
         println("Cancelled: ${stats["cancelled"]}")
+        println("Capacity:  ${service.capacity}")
+        println("Quoted revenue: $%.2f".format(service.totalQuotedRevenue()))
     }
 
     // ── 8. Export to CSV ───────────────────────────────────────────
@@ -381,8 +418,28 @@ class App {
         print("Save quote to file? (path or blank): ")
         val saveTo = scanner.nextLine().trim().ifEmpty { null }
 
-        pricer.calculateAndPrintAndMaybeSave(
-            id, type, party, loyalty, coupon, prepay, season, saveTo
-        )
+        try {
+            pricer.calculateAndPrintAndMaybeSave(
+                id, type, party, loyalty, coupon, prepay, season, saveTo
+            )
+        } catch (e: IllegalArgumentException) {
+            println("Error: ${e.message}")
+        }
+    }
+
+    // ── 14. Set capacity ───────────────────────────────────────────
+
+    private fun setCapacity() {
+        print("New capacity (positive integer, current ${service.capacity}): ")
+        val value = scanner.nextLine().trim().toIntOrNull()
+        if (value == null) {
+            println("Capacity must be an integer."); return
+        }
+        try {
+            service.capacity = value
+            println("Capacity set to ${service.capacity}.")
+        } catch (e: IllegalArgumentException) {
+            println("Error: ${e.message}")
+        }
     }
 }

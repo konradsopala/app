@@ -3,12 +3,14 @@ package com.booking.service
 import com.booking.model.Booking
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * Composable validation rules engine for booking operations.
  *
  * Centralizes all business rules (duplicate detection, advance notice, max per customer,
- * weekend blocking) and reports all violations at once via [ValidationResult].
+ * weekend blocking, time-slot capacity) and reports all violations at once via
+ * [ValidationResult].
  */
 class BookingValidator(private val service: BookingService) {
 
@@ -25,7 +27,13 @@ class BookingValidator(private val service: BookingService) {
 
     // ── Validate new booking ─────────────────────────────────────
 
-    fun validateNewBooking(customerName: String?, date: LocalDate?, description: String?): ValidationResult {
+    fun validateNewBooking(
+        customerName: String?,
+        date: LocalDate?,
+        startTime: LocalTime?,
+        durationMinutes: Int?,
+        description: String?
+    ): ValidationResult {
         val errors = mutableListOf<String>()
 
         if (customerName.isNullOrBlank()) {
@@ -45,7 +53,17 @@ class BookingValidator(private val service: BookingService) {
             }
         }
 
-        // Cache the list once to avoid repeated collection copying
+        if (durationMinutes != null && durationMinutes <= 0) {
+            errors.add("Duration must be a positive number of minutes.")
+        }
+
+        if (startTime != null && durationMinutes != null && durationMinutes > 0) {
+            val endMinutes = startTime.toSecondOfDay() / 60 + durationMinutes
+            if (endMinutes > 24 * 60) {
+                errors.add("Booking must end on the same day (start $startTime + ${durationMinutes}m crosses midnight).")
+            }
+        }
+
         if (customerName != null || date != null) {
             val bookings = service.listBookings()
 
@@ -68,6 +86,11 @@ class BookingValidator(private val service: BookingService) {
             }
         }
 
+        if (date != null && startTime != null && durationMinutes != null && durationMinutes > 0) {
+            val capacityError = checkCapacity(date, startTime, durationMinutes, excludeId = null)
+            if (capacityError != null) errors.add(capacityError)
+        }
+
         if (description.isNullOrBlank()) {
             errors.add("Description cannot be empty.")
         }
@@ -77,7 +100,12 @@ class BookingValidator(private val service: BookingService) {
 
     // ── Validate update ──────────────────────────────────────────
 
-    fun validateUpdate(newDate: LocalDate?): ValidationResult {
+    fun validateUpdate(
+        bookingId: String,
+        newDate: LocalDate?,
+        newStartTime: LocalTime?,
+        newDurationMinutes: Int?
+    ): ValidationResult {
         val errors = mutableListOf<String>()
 
         if (newDate != null && newDate.isBefore(LocalDate.now())) {
@@ -93,6 +121,47 @@ class BookingValidator(private val service: BookingService) {
             }
         }
 
+        if (newDurationMinutes != null && newDurationMinutes <= 0) {
+            errors.add("Duration must be a positive number of minutes.")
+        }
+
+        // If any time-related field is being touched, re-check capacity using
+        // the resulting (possibly mixed old+new) values.
+        if (newDate != null || newStartTime != null || newDurationMinutes != null) {
+            val current = service.findBooking(bookingId)
+            if (current != null) {
+                val effectiveDate = newDate ?: current.date
+                val effectiveStart = newStartTime ?: current.startTime
+                val effectiveDuration = newDurationMinutes ?: current.durationMinutes
+                if (effectiveDuration > 0) {
+                    val endMinutes = effectiveStart.toSecondOfDay() / 60 + effectiveDuration
+                    if (endMinutes > 24 * 60) {
+                        errors.add("Booking must end on the same day.")
+                    } else {
+                        val capacityError = checkCapacity(
+                            effectiveDate, effectiveStart, effectiveDuration, excludeId = bookingId
+                        )
+                        if (capacityError != null) errors.add(capacityError)
+                    }
+                }
+            }
+        }
+
         return if (errors.isEmpty()) ValidationResult.ok() else ValidationResult.fail(errors)
+    }
+
+    // Returns an error string if accepting the proposed slot would push the
+    // count of overlapping confirmed bookings past [BookingService.capacity].
+    private fun checkCapacity(
+        date: LocalDate,
+        start: LocalTime,
+        durationMinutes: Int,
+        excludeId: String?
+    ): String? {
+        val overlapping = service.overlappingBookings(date, start, durationMinutes, excludeId)
+        return if (overlapping.size >= service.capacity) {
+            "Time slot is full: ${overlapping.size} confirmed booking(s) overlap " +
+                "(capacity ${service.capacity})."
+        } else null
     }
 }

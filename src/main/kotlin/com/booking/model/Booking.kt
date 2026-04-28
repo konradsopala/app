@@ -1,6 +1,7 @@
 package com.booking.model
 
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.UUID
 
 /**
@@ -9,6 +10,8 @@ import java.util.UUID
 class Booking(
     val customerName: String,
     var date: LocalDate,
+    var startTime: LocalTime,
+    var durationMinutes: Int,
     var description: String
 ) {
     enum class Status {
@@ -19,10 +22,24 @@ class Booking(
     var status: Status = Status.CONFIRMED
         private set
 
+    var quote: Quote? = null
+        internal set
+
+    val endTime: LocalTime
+        get() = startTime.plusMinutes(durationMinutes.toLong())
+
     fun cancel() {
         status = Status.CANCELLED
     }
 
-    override fun toString(): String =
-        "[$id] $customerName | $date | $description | $status"
+    /** True if this booking's time window on [other.date] overlaps [other]. */
+    fun overlaps(other: Booking): Boolean {
+        if (date != other.date) return false
+        return startTime < other.endTime && other.startTime < endTime
+    }
+
+    override fun toString(): String {
+        val priceSuffix = quote?.let { " | $%.2f".format(it.total) } ?: ""
+        return "[$id] $customerName | $date $startTime-$endTime | $description | $status$priceSuffix"
+    }
 }
