@@ -361,9 +361,17 @@ class App {
         print("Customer type (REGULAR/VIP/CORPORATE): ")
         val type = scanner.nextLine().trim()
         print("Party size: ")
-        val party = scanner.nextLine().trim().toIntOrNull() ?: 1
+        val party = scanner.nextLine().trim().toIntOrNull()
+        if (party == null || party <= 0) {
+            println("Error: Party size must be a positive integer.")
+            return
+        }
         print("Loyalty years: ")
-        val loyalty = scanner.nextLine().trim().toIntOrNull() ?: 0
+        val loyalty = scanner.nextLine().trim().toIntOrNull()
+        if (loyalty == null || loyalty < 0) {
+            println("Error: Loyalty years must be a non-negative integer.")
+            return
+        }
         print("Coupon code (blank for none): ")
         val coupon = scanner.nextLine().trim().ifEmpty { null }
         print("Prepay? (y/n): ")

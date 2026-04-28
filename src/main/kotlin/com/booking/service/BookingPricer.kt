@@ -18,10 +18,21 @@ class BookingPricer(private val service: BookingService) {
         season: String,
         saveTo: String?
     ): Double {
-        val b = service.findBooking(bookingId) ?: return -1.0
+        val b = service.findBooking(bookingId)
+            ?: throw IllegalArgumentException("Unknown bookingId: $bookingId")
+
+        val normalizedCustomerType = customerType.uppercase()
+        if (normalizedCustomerType !in setOf("REGULAR", "VIP", "CORPORATE")) {
+            throw IllegalArgumentException("Invalid customerType: $customerType. Must be REGULAR, VIP, or CORPORATE.")
+        }
+
+        val normalizedSeason = season.uppercase()
+        if (normalizedSeason !in setOf("HIGH", "LOW", "MID")) {
+            throw IllegalArgumentException("Invalid season: $season. Must be HIGH, LOW, or MID.")
+        }
 
         var price = 0.0
-        if (customerType == "REGULAR" || customerType == "regular") {
+        if (normalizedCustomerType == "REGULAR") {
             price = 100.0
             if (partySize > 0) {
                 if (partySize == 1) {
@@ -50,7 +61,7 @@ class BookingPricer(private val service: BookingService) {
                     }
                 }
             }
-        } else if (customerType == "VIP" || customerType == "vip") {
+        } else if (normalizedCustomerType == "VIP") {
             price = 200.0
             if (partySize > 0) {
                 if (partySize == 1) {
@@ -79,7 +90,7 @@ class BookingPricer(private val service: BookingService) {
                     }
                 }
             }
-        } else if (customerType == "CORPORATE" || customerType == "corporate") {
+        } else if (normalizedCustomerType == "CORPORATE") {
             price = 150.0
             if (partySize > 0) {
                 if (partySize == 1) {
@@ -114,28 +125,28 @@ class BookingPricer(private val service: BookingService) {
 
         val day = b.date.dayOfWeek
         if (day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY) {
-            if (season == "HIGH" || season == "high") {
+            if (normalizedSeason == "HIGH") {
                 price = price * 1.5
-                if (customerType == "VIP" || customerType == "vip") {
+                if (normalizedCustomerType == "VIP") {
                     price = price * 0.95
                 }
-            } else if (season == "LOW" || season == "low") {
+            } else if (normalizedSeason == "LOW") {
                 price = price * 1.1
             } else {
                 price = price * 1.25
             }
         } else if (day == DayOfWeek.FRIDAY) {
-            if (season == "HIGH" || season == "high") {
+            if (normalizedSeason == "HIGH") {
                 price = price * 1.3
-            } else if (season == "LOW" || season == "low") {
+            } else if (normalizedSeason == "LOW") {
                 price = price * 1.05
             } else {
                 price = price * 1.15
             }
         } else {
-            if (season == "HIGH" || season == "high") {
+            if (normalizedSeason == "HIGH") {
                 price = price * 1.2
-            } else if (season == "LOW" || season == "low") {
+            } else if (normalizedSeason == "LOW") {
                 price = price * 0.9
             }
         }
@@ -166,7 +177,7 @@ class BookingPricer(private val service: BookingService) {
                 price = price - 20.0
             } else if (c == "HALF") {
                 price = price / 2.0
-            } else if (c == "VIP100" && (customerType == "VIP" || customerType == "vip")) {
+            } else if (c == "VIP100" && normalizedCustomerType == "VIP") {
                 price = price - 100.0
             } else if (c.startsWith("PCT")) {
                 try {
@@ -197,8 +208,6 @@ class BookingPricer(private val service: BookingService) {
             }
         }
 
-        if (price < 25.0) price = 25.0
-
         val today = LocalDate.now()
         val daysOut = java.time.temporal.ChronoUnit.DAYS.between(today, b.date)
         if (daysOut >= 0 && daysOut <= 2) {
@@ -212,6 +221,8 @@ class BookingPricer(private val service: BookingService) {
                 }
             }
         }
+
+        if (price < 25.0) price = 25.0
 
         val rounded = (Math.round(price * 100.0)) / 100.0
 
