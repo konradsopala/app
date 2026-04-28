@@ -34,18 +34,25 @@ class BookingService {
         date: LocalDate,
         startTime: LocalTime,
         durationMinutes: Int,
-        description: String
+        description: String,
+        seriesId: String? = null
     ): Booking {
         require(!date.isBefore(LocalDate.now())) { "Booking date cannot be in the past." }
         require(durationMinutes > 0) { "Duration must be positive." }
-        val booking = Booking(customerName, date, startTime, durationMinutes, description)
+        val booking = Booking(customerName, date, startTime, durationMinutes, description, seriesId)
         bookings[booking.id] = booking
+        val seriesNote = seriesId?.let { ", Series: $it" } ?: ""
         auditLog.log(
             booking.id, AuditLog.Action.CREATED,
-            "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}"
+            "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}$seriesNote"
         )
         return booking
     }
+
+    // ── Series queries ──────────────────────────────────────────────
+
+    fun findBySeries(seriesId: String): List<Booking> =
+        bookings.values.filter { it.seriesId == seriesId }
 
     // ── Cancel ──────────────────────────────────────────────────────
 

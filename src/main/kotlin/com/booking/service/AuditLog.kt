@@ -11,7 +11,7 @@ import java.util.Objects
 class AuditLog {
 
     enum class Action {
-        CREATED, CANCELLED, UPDATED, EXPORTED, QUOTED
+        CREATED, CANCELLED, UPDATED, EXPORTED, QUOTED, WAITLISTED, PROMOTED, SERIES_CANCELLED
     }
 
     data class Entry(
