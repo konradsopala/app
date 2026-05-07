@@ -181,9 +181,24 @@ class App {
         val id = scanner.nextLine().trim()
         if (service.cancelBooking(id)) {
             println("Booking cancelled.")
+            autoRefundForBooking(id)
             promoteWaitlistIfAny()
         } else {
             println("Booking not found or already cancelled.")
+        }
+    }
+
+    private fun autoRefundForBooking(bookingId: String) {
+        val result = payments.refundAllForBooking(bookingId)
+        if (result.refunded.isNotEmpty()) {
+            println("Auto-refunded ${result.refunded.size} payment(s):")
+            result.refunded.forEach { println("  ↩ $it") }
+        }
+        if (result.failures.isNotEmpty()) {
+            println("Refund failed for ${result.failures.size} payment(s):")
+            result.failures.forEach { (intent, reason) ->
+                println("  ! ${intent.id}: $reason")
+            }
         }
     }
 
@@ -568,8 +583,14 @@ class App {
         val matching = service.findBySeries(seriesId)
         if (matching.isEmpty()) { println("No bookings found for series $seriesId."); return }
 
+        // Snapshot the IDs that were CONFIRMED before the bulk cancel — these
+        // are the bookings we'll need to refund. Reading after the fact would
+        // include long-cancelled ones too.
+        val toRefund = matching.filter { it.status == Booking.Status.CONFIRMED }.map { it.id }
+
         val cancelled = recurring.cancelSeries(seriesId)
         println("Cancelled $cancelled booking(s) in series $seriesId.")
+        toRefund.forEach { autoRefundForBooking(it) }
         promoteWaitlistIfAny()
     }
 

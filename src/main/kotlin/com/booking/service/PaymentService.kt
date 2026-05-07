@@ -97,6 +97,33 @@ class PaymentService(
         intents.values.filter { it.bookingId == bookingId }
 
     /**
+     * Refund every SUCCEEDED intent attached to [bookingId]. Used by the
+     * cancel flow so a paid booking doesn't leave funds held when the slot
+     * goes away. Failures from the processor are caught per-intent so one
+     * bad refund doesn't block the others; they are returned in [failures].
+     */
+    data class BulkRefundResult(
+        val refunded: List<PaymentIntent>,
+        val failures: List<Pair<PaymentIntent, String>>
+    )
+
+    fun refundAllForBooking(bookingId: String): BulkRefundResult {
+        val targets = intents.values.filter {
+            it.bookingId == bookingId && it.status == PaymentIntent.Status.SUCCEEDED
+        }
+        val refunded = mutableListOf<PaymentIntent>()
+        val failures = mutableListOf<Pair<PaymentIntent, String>>()
+        for (intent in targets) {
+            try {
+                refunded.add(refund(intent.id))
+            } catch (e: Exception) {
+                failures.add(intent to (e.message ?: e::class.simpleName ?: "unknown"))
+            }
+        }
+        return BulkRefundResult(refunded, failures)
+    }
+
+    /**
      * Sum of currently-held funds across all intents, regardless of currency.
      * Refunded intents contribute 0 (charge + refund cancel out); only intents
      * still in SUCCEEDED state count.
