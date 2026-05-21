@@ -1,6 +1,9 @@
 package com.booking
 
 import com.booking.model.Booking
+import com.booking.notification.ConsoleNotifier
+import com.booking.notification.NotificationDispatcher
+import com.booking.notification.NotificationEvent
 import com.booking.service.AuditLog
 import com.booking.service.BookingPricer
 import com.booking.service.BookingService
@@ -32,6 +35,9 @@ class App {
     private val waitlist = WaitlistService(service, validator)
     private val payments = PaymentService(service, MockPaymentProcessor())
     private val ical = ICalExporter(service)
+    private val notifications = NotificationDispatcher().apply {
+        register(ConsoleNotifier())
+    }
     private val scanner = Scanner(System.`in`)
 
     fun run() {
@@ -152,6 +158,7 @@ class App {
         try {
             val booking = service.createBooking(name, date, startTime, duration, description)
             println("Booking created: $booking")
+            notifications.dispatch(NotificationEvent.BookingCreated(booking))
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
         }
@@ -179,20 +186,27 @@ class App {
     private fun cancelBooking() {
         print("Booking ID to cancel: ")
         val id = scanner.nextLine().trim()
-        if (service.cancelBooking(id)) {
+        val booking = service.findBooking(id)
+        if (booking != null && service.cancelBooking(id)) {
             println("Booking cancelled.")
-            autoRefundForBooking(id)
+            notifications.dispatch(NotificationEvent.BookingCancelled(booking))
+            autoRefundForBooking(id, booking)
             promoteWaitlistIfAny()
         } else {
             println("Booking not found or already cancelled.")
         }
     }
 
-    private fun autoRefundForBooking(bookingId: String) {
+    private fun autoRefundForBooking(bookingId: String, booking: Booking? = service.findBooking(bookingId)) {
         val result = payments.refundAllForBooking(bookingId)
         if (result.refunded.isNotEmpty()) {
             println("Auto-refunded ${result.refunded.size} payment(s):")
             result.refunded.forEach { println("  ↩ $it") }
+            if (booking != null) {
+                result.refunded.forEach {
+                    notifications.dispatch(NotificationEvent.PaymentRefunded(it, booking))
+                }
+            }
         }
         if (result.failures.isNotEmpty()) {
             println("Refund failed for ${result.failures.size} payment(s):")
@@ -206,7 +220,12 @@ class App {
         val promoted = waitlist.tryPromoteAll()
         if (promoted.isNotEmpty()) {
             println("Promoted ${promoted.size} from waitlist:")
-            promoted.forEach { println("  + $it") }
+            promoted.forEach { promotion ->
+                println("  + ${promotion.booking}")
+                notifications.dispatch(
+                    NotificationEvent.WaitlistPromoted(promotion.entry, promotion.booking)
+                )
+            }
         }
     }
 
@@ -639,6 +658,17 @@ class App {
         try {
             val intent = payments.confirm(id)
             println("Payment $id is now ${intent.status}: $intent")
+            val booking = service.findBooking(intent.bookingId)
+            if (booking != null) {
+                val event = when (intent.status) {
+                    com.booking.model.PaymentIntent.Status.SUCCEEDED ->
+                        NotificationEvent.PaymentSucceeded(intent, booking)
+                    com.booking.model.PaymentIntent.Status.FAILED ->
+                        NotificationEvent.PaymentFailed(intent, booking)
+                    else -> null
+                }
+                event?.let { notifications.dispatch(it) }
+            }
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
         } catch (e: IllegalStateException) {
@@ -654,6 +684,10 @@ class App {
         try {
             val intent = payments.refund(id)
             println("Payment $id refunded: $intent")
+            val booking = service.findBooking(intent.bookingId)
+            if (booking != null) {
+                notifications.dispatch(NotificationEvent.PaymentRefunded(intent, booking))
+            }
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
         } catch (e: IllegalStateException) {

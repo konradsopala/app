@@ -57,14 +57,17 @@ class WaitlistService(
 
     // ── Promote ────────────────────────────────────────────────────
 
+    /** Result of a single waitlist → booking promotion. */
+    data class Promotion(val entry: WaitlistEntry, val booking: Booking)
+
     /**
      * Walks the queue front-to-back; for each entry, if a fresh validation
      * pass succeeds, creates the booking and removes the entry. Returns the
-     * promoted bookings in promotion order. Each promotion narrows capacity
-     * for subsequent entries, so naturally caps at the available slots.
+     * promotions in order. Each promotion narrows capacity for subsequent
+     * entries, so naturally caps at the available slots.
      */
-    fun tryPromoteAll(): List<Booking> {
-        val promoted = mutableListOf<Booking>()
+    fun tryPromoteAll(): List<Promotion> {
+        val promoted = mutableListOf<Promotion>()
         val iter = entries.iterator()
         while (iter.hasNext()) {
             val e = iter.next()
@@ -81,7 +84,7 @@ class WaitlistService(
                     booking.id, AuditLog.Action.PROMOTED,
                     "Promoted from waitlist entry ${e.id}"
                 )
-                promoted.add(booking)
+                promoted.add(Promotion(e, booking))
                 iter.remove()
             } catch (_: Exception) {
                 // Promotion failed; entry remains in the queue for the next tryPromoteAll pass.

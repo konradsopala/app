@@ -34,6 +34,7 @@ java -jar booking.jar
 - **Waitlist** — when a new booking is rejected solely on capacity, the CLI offers to add it to a FIFO waitlist. After every cancellation (or capacity bump) the system walks the queue and promotes any entry whose slot now passes full validation, in order. Waitlist entries can be listed and removed manually.
 - **Payment intents** — Stripe-style flow: a booking with a quote can have a `PaymentIntent` created, then `confirm`ed via a pluggable `PaymentProcessor` (a `MockPaymentProcessor` ships in-tree; swap in a real gateway by implementing the interface). Successful intents move to `SUCCEEDED` and can be `refund`ed; declines move to `FAILED`. Every transition is recorded in the audit log and reflected in `netSettled`. Cancelling a booking (single or whole series) **auto-refunds** any `SUCCEEDED` intents attached to it, so funds aren't left held when the slot goes away.
 - **iCalendar export** — render any booking, or all bookings, as RFC 5545 `.ics` content with proper TEXT escaping (commas, semicolons, newlines, backslashes), 75-octet line folding, CRLF terminators, and `STATUS:CONFIRMED|CANCELLED` so cancelled events still surface in calendar clients.
+- **Notifications (L1)** — `NotificationDispatcher` fans out booking/payment/waitlist events to registered `Notifier`s. A `ConsoleNotifier` ships in-tree; new channels (email, SMS, …) plug in by implementing the same interface. Exceptions thrown by one notifier are isolated so they never break dispatch to the rest.
 
 ## Project Structure
 
@@ -55,6 +56,11 @@ src/main/kotlin/com/booking/
 │   ├── PaymentProcessor.kt       # Pluggable gateway interface + MockPaymentProcessor for tests
 │   ├── PaymentService.kt         # Intent lifecycle: create → confirm → (succeed | fail) → refund
 │   └── ICalExporter.kt           # RFC 5545 (.ics) renderer for single bookings or whole calendar
+├── notification/
+│   ├── NotificationEvent.kt      # Sealed hierarchy: BookingCreated/Cancelled, Payment*, WaitlistPromoted
+│   ├── Notifier.kt               # Channel interface (name + handle)
+│   ├── ConsoleNotifier.kt        # Stdout impl, tagged with [NOTIFY hh:mm:ss]
+│   └── NotificationDispatcher.kt # Fanout with per-notifier exception isolation
 ├── util/
 │   └── BookingFilter.kt          # Fluent sort/filter utility
 └── App.kt                        # CLI entry point
