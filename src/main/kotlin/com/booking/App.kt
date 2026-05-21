@@ -2,8 +2,10 @@ package com.booking
 
 import com.booking.model.Booking
 import com.booking.notification.ConsoleNotifier
+import com.booking.notification.EmailNotifier
 import com.booking.notification.NotificationDispatcher
 import com.booking.notification.NotificationEvent
+import com.booking.notification.SmsNotifier
 import com.booking.service.AuditLog
 import com.booking.service.BookingPricer
 import com.booking.service.BookingService
@@ -37,6 +39,10 @@ class App {
     private val ical = ICalExporter(service)
     private val notifications = NotificationDispatcher().apply {
         register(ConsoleNotifier())
+        // Email and SMS are wired up but disabled by default — flip them on
+        // from the channel-management menu (option 24).
+        register(EmailNotifier(), enabled = false)
+        register(SmsNotifier(), enabled = false)
     }
     private val scanner = Scanner(System.`in`)
 
@@ -69,7 +75,8 @@ class App {
                 |21) Refund payment
                 |22) List payments
                 |23) Export to iCalendar (.ics)
-                |24) Exit
+                |24) Manage notification channels
+                |25) Exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -97,7 +104,8 @@ class App {
                 "21" -> refundPayment()
                 "22" -> listPayments()
                 "23" -> exportICal()
-                "24" -> { println("Goodbye!"); return }
+                "24" -> manageNotificationChannels()
+                "25" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
@@ -740,5 +748,26 @@ class App {
             }
             else -> println("Invalid choice.")
         }
+    }
+
+    // ── 24. Manage notification channels ──────────────────────────
+
+    private fun manageNotificationChannels() {
+        println("Notification channels:")
+        val states = notifications.channelStates()
+        states.forEachIndexed { i, (name, enabled) ->
+            val flag = if (enabled) "✓" else " "
+            println("  ${i + 1}) [$flag] $name")
+        }
+        print("Toggle which? (number, blank to cancel): ")
+        val input = scanner.nextLine().trim()
+        if (input.isEmpty()) return
+        val idx = input.toIntOrNull()
+        if (idx == null || idx !in 1..states.size) {
+            println("Invalid selection."); return
+        }
+        val (name, wasEnabled) = states[idx - 1]
+        notifications.setEnabled(name, !wasEnabled)
+        println("Channel '$name' is now ${if (!wasEnabled) "ENABLED" else "DISABLED"}.")
     }
 }
