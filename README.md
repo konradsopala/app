@@ -34,6 +34,7 @@ java -jar booking.jar
 - **Waitlist** — when a new booking is rejected solely on capacity, the CLI offers to add it to a FIFO waitlist. After every cancellation (or capacity bump) the system walks the queue and promotes any entry whose slot now passes full validation, in order. Waitlist entries can be listed and removed manually.
 - **Payment intents** — Stripe-style flow: a booking with a quote can have a `PaymentIntent` created, then `confirm`ed via a pluggable `PaymentProcessor` (a `MockPaymentProcessor` ships in-tree; swap in a real gateway by implementing the interface). Successful intents move to `SUCCEEDED` and can be `refund`ed; declines move to `FAILED`. Every transition is recorded in the audit log and reflected in `netSettled`. Cancelling a booking (single or whole series) **auto-refunds** any `SUCCEEDED` intents attached to it, so funds aren't left held when the slot goes away.
 - **iCalendar export** — render any booking, or all bookings, as RFC 5545 `.ics` content with proper TEXT escaping (commas, semicolons, newlines, backslashes), 75-octet line folding, CRLF terminators, and `STATUS:CONFIRMED|CANCELLED` so cancelled events still surface in calendar clients.
+- **Customer directory** — standalone in-memory directory of `Customer` records (name, optional email/phone, loyalty years, notes). Independent of `BookingService`: customers can exist without bookings and vice versa, so neither side has to coordinate cleanup. Searchable by case-insensitive name substring and by unique email.
 
 ## Project Structure
 
@@ -43,7 +44,8 @@ src/main/kotlin/com/booking/
 │   ├── Booking.kt                # Booking entity (status, time slot, attached quote, optional seriesId)
 │   ├── Quote.kt                  # Persisted price-quote snapshot
 │   ├── WaitlistEntry.kt          # Pending booking request held until capacity frees up
-│   └── PaymentIntent.kt          # Stripe-style payment intent (status state machine, amount frozen at create time)
+│   ├── PaymentIntent.kt          # Stripe-style payment intent (status state machine, amount frozen at create time)
+│   └── Customer.kt               # Customer directory record (name, contact, loyalty)
 ├── service/
 │   ├── AuditLog.kt               # Immutable event log for all mutations
 │   ├── BookingPricer.kt          # Pricing calculator that persists quotes back to bookings
@@ -54,7 +56,8 @@ src/main/kotlin/com/booking/
 │   ├── WaitlistService.kt        # FIFO queue with capacity-aware promotion
 │   ├── PaymentProcessor.kt       # Pluggable gateway interface + MockPaymentProcessor for tests
 │   ├── PaymentService.kt         # Intent lifecycle: create → confirm → (succeed | fail) → refund
-│   └── ICalExporter.kt           # RFC 5545 (.ics) renderer for single bookings or whole calendar
+│   ├── ICalExporter.kt           # RFC 5545 (.ics) renderer for single bookings or whole calendar
+│   └── CustomerService.kt        # In-memory customer directory CRUD
 ├── util/
 │   └── BookingFilter.kt          # Fluent sort/filter utility
 └── App.kt                        # CLI entry point
