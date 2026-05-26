@@ -12,6 +12,7 @@ import com.booking.service.MockPaymentProcessor
 import com.booking.service.PaymentService
 import com.booking.service.RecurringBookingService
 import com.booking.service.ReportGenerator
+import com.booking.service.StatisticsService
 import com.booking.service.WaitlistService
 import com.booking.util.BookingFilter
 import java.io.IOException
@@ -35,6 +36,7 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
     private val payments = PaymentService(service, MockPaymentProcessor())
     private val ical = ICalExporter(service)
     private val customers = CustomerService()
+    private val stats = StatisticsService(service)
     private val scanner = Scanner(System.`in`)
 
     fun run() {
@@ -289,13 +291,30 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
     // ── 7. Statistics ──────────────────────────────────────────────
 
     private fun showStatistics() {
-        val stats = service.getStatistics()
+        val basic = service.getStatistics()
         println("--- Booking Statistics ---")
-        println("Total:     ${stats["total"]}")
-        println("Confirmed: ${stats["confirmed"]}")
-        println("Cancelled: ${stats["cancelled"]}")
+        println("Total:     ${basic["total"]}")
+        println("Confirmed: ${basic["confirmed"]}")
+        println("Cancelled: ${basic["cancelled"]}")
         println("Capacity:  ${service.capacity}")
         println("Quoted revenue: $%.2f".format(service.totalQuotedRevenue()))
+
+        println("\n--- Activity ---")
+        val busiest = stats.busiestDate()
+        if (busiest == null) {
+            println("Busiest day:           (no bookings yet)")
+        } else {
+            println("Busiest day:           ${busiest.date} (${busiest.count} booking(s))")
+        }
+        println("Avg bookings / day:    %.2f".format(stats.averageBookingsPerActiveDay()))
+        println("Peak utilisation:      %.1f%%".format(stats.peakCapacityUtilisation()))
+        println("Booking horizon:       ${stats.bookingHorizonDays()} day(s)")
+
+        val top = stats.topCustomers(3)
+        if (top.isNotEmpty()) {
+            println("\nTop customers:")
+            top.forEachIndexed { i, c -> println("  ${i + 1}) ${c.customer} — ${c.count}") }
+        }
     }
 
     // ── 8. Export to CSV ───────────────────────────────────────────

@@ -36,6 +36,7 @@ java -jar booking.jar
 - **iCalendar export** — render any booking, or all bookings, as RFC 5545 `.ics` content with proper TEXT escaping (commas, semicolons, newlines, backslashes), 75-octet line folding, CRLF terminators, and `STATUS:CONFIRMED|CANCELLED` so cancelled events still surface in calendar clients.
 - **Customer directory** — standalone in-memory directory of `Customer` records (name, optional email/phone, loyalty years, notes). Independent of `BookingService`: customers can exist without bookings and vice versa, so neither side has to coordinate cleanup. Searchable by case-insensitive name substring and by unique email.
 - **Centralised config** — `AppConfig` data class holds the defaults that used to live as magic numbers (capacity, currency, CSV/ICS paths) so integration tests can swap them via `AppConfig.withDefaults(...)` without polluting global state.
+- **Derived statistics** — `StatisticsService` computes busiest date, average bookings per active day, peak capacity utilisation, booking horizon, and top-N customers by booking count, leaving the core `BookingService` lean.
 
 ## Project Structure
 
@@ -60,7 +61,8 @@ src/main/kotlin/com/booking/
 │   ├── PaymentProcessor.kt       # Pluggable gateway interface + MockPaymentProcessor for tests
 │   ├── PaymentService.kt         # Intent lifecycle: create → confirm → (succeed | fail) → refund
 │   ├── ICalExporter.kt           # RFC 5545 (.ics) renderer for single bookings or whole calendar
-│   └── CustomerService.kt        # In-memory customer directory CRUD
+│   ├── CustomerService.kt        # In-memory customer directory CRUD
+│   └── StatisticsService.kt      # Derived metrics: busiest day, top customers, capacity utilisation
 ├── util/
 │   └── BookingFilter.kt          # Fluent sort/filter utility
 └── App.kt                        # CLI entry point
