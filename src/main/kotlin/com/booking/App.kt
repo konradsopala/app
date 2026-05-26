@@ -429,11 +429,48 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
             filter.byCustomer(customerInput)
         }
 
-        print("Sort by? (date/customer/status, default date): ")
+        print("Min duration in minutes? (blank to skip): ")
+        val minDurInput = scanner.nextLine().trim()
+        if (minDurInput.isNotEmpty()) {
+            minDurInput.toIntOrNull()?.let { filter.byMinDuration(it) }
+                ?: println("Invalid number, skipping min-duration filter.")
+        }
+
+        print("Max duration in minutes? (blank to skip): ")
+        val maxDurInput = scanner.nextLine().trim()
+        if (maxDurInput.isNotEmpty()) {
+            maxDurInput.toIntOrNull()?.let { filter.byMaxDuration(it) }
+                ?: println("Invalid number, skipping max-duration filter.")
+        }
+
+        print("Price range? (min,max or blank to skip): ")
+        val priceInput = scanner.nextLine().trim()
+        if (priceInput.isNotEmpty()) {
+            val parts = priceInput.split(",").map { it.trim() }
+            if (parts.size == 2) {
+                val pMin = parts[0].toDoubleOrNull()
+                val pMax = parts[1].toDoubleOrNull()
+                try {
+                    filter.byPriceRange(pMin, pMax)
+                } catch (e: IllegalArgumentException) {
+                    println("Invalid range: ${e.message}")
+                }
+            } else {
+                println("Expected min,max — skipping price filter.")
+            }
+        }
+
+        print("Customer type? (REGULAR/VIP/CORPORATE or blank): ")
+        val typeInput = scanner.nextLine().trim()
+        if (typeInput.isNotEmpty()) filter.byCustomerType(typeInput)
+
+        print("Sort by? (date/customer/status/duration/price, default date): ")
         val sortInput = scanner.nextLine().trim().lowercase()
         val sortField = when (sortInput) {
             "customer" -> BookingFilter.SortField.CUSTOMER_NAME
             "status"   -> BookingFilter.SortField.STATUS
+            "duration" -> BookingFilter.SortField.DURATION
+            "price"    -> BookingFilter.SortField.PRICE
             else       -> BookingFilter.SortField.DATE
         }
 
