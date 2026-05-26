@@ -1,5 +1,6 @@
 package com.booking
 
+import com.booking.config.AppConfig
 import com.booking.model.Booking
 import com.booking.service.AuditLog
 import com.booking.service.BookingPricer
@@ -23,9 +24,9 @@ fun main() {
     App().run()
 }
 
-class App {
+class App(private val config: AppConfig = AppConfig.DEFAULT) {
 
-    private val service = BookingService()
+    private val service = BookingService(config)
     private val validator = BookingValidator(service)
     private val reportGenerator = ReportGenerator(service)
     private val pricer = BookingPricer(service)
@@ -300,9 +301,9 @@ class App {
     // ── 8. Export to CSV ───────────────────────────────────────────
 
     private fun exportToCsv() {
-        print("File path (default: bookings.csv): ")
+        print("File path (default: ${config.defaultCsvPath}): ")
         var path = scanner.nextLine().trim()
-        if (path.isEmpty()) path = "bookings.csv"
+        if (path.isEmpty()) path = config.defaultCsvPath
         try {
             service.exportToCsv(path)
             println("Bookings exported to $path")
@@ -699,8 +700,8 @@ class App {
             }
             "b" -> {
                 if (service.listBookings().isEmpty()) { println("No bookings to export."); return }
-                print("File path (default: bookings.ics): ")
-                val path = scanner.nextLine().trim().ifEmpty { "bookings.ics" }
+                print("File path (default: ${config.defaultIcsPath}): ")
+                val path = scanner.nextLine().trim().ifEmpty { config.defaultIcsPath }
                 try {
                     ical.saveAll(path)
                     println("Wrote ${service.listBookings().size} event(s) to $path")

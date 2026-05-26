@@ -35,11 +35,14 @@ java -jar booking.jar
 - **Payment intents** — Stripe-style flow: a booking with a quote can have a `PaymentIntent` created, then `confirm`ed via a pluggable `PaymentProcessor` (a `MockPaymentProcessor` ships in-tree; swap in a real gateway by implementing the interface). Successful intents move to `SUCCEEDED` and can be `refund`ed; declines move to `FAILED`. Every transition is recorded in the audit log and reflected in `netSettled`. Cancelling a booking (single or whole series) **auto-refunds** any `SUCCEEDED` intents attached to it, so funds aren't left held when the slot goes away.
 - **iCalendar export** — render any booking, or all bookings, as RFC 5545 `.ics` content with proper TEXT escaping (commas, semicolons, newlines, backslashes), 75-octet line folding, CRLF terminators, and `STATUS:CONFIRMED|CANCELLED` so cancelled events still surface in calendar clients.
 - **Customer directory** — standalone in-memory directory of `Customer` records (name, optional email/phone, loyalty years, notes). Independent of `BookingService`: customers can exist without bookings and vice versa, so neither side has to coordinate cleanup. Searchable by case-insensitive name substring and by unique email.
+- **Centralised config** — `AppConfig` data class holds the defaults that used to live as magic numbers (capacity, currency, CSV/ICS paths) so integration tests can swap them via `AppConfig.withDefaults(...)` without polluting global state.
 
 ## Project Structure
 
 ```text
 src/main/kotlin/com/booking/
+├── config/
+│   └── AppConfig.kt              # Central defaults: capacity, currency, file paths
 ├── model/
 │   ├── Booking.kt                # Booking entity (status, time slot, attached quote, optional seriesId)
 │   ├── Quote.kt                  # Persisted price-quote snapshot
