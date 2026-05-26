@@ -1,6 +1,6 @@
 # Booking System
 
-A command-line booking system built with Kotlin. Supports full booking lifecycle management with validation, audit logging, reporting, advanced search, time-slot scheduling with configurable capacity, persistent price quotes, recurring booking series, a capacity-aware FIFO waitlist, payment intents (Stripe-style, with a pluggable processor), and iCalendar (`.ics`) export.
+A command-line booking system built with Kotlin. Supports full booking lifecycle management with validation, audit logging, reporting, advanced search, time-slot scheduling with configurable capacity, persistent price quotes, recurring booking series, a capacity-aware FIFO waitlist, payment intents (Stripe-style, with a pluggable processor), iCalendar (`.ics`) export, a standalone customer directory, and a derived-metrics layer (busiest day, capacity utilisation, top customers).
 
 ## Prerequisites
 
