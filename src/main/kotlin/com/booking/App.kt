@@ -148,7 +148,23 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
         print("Description: ")
         val description = scanner.nextLine().trim()
 
-        val result = validator.validateNewBooking(name, date, startTime, duration, description)
+        print("Tags (comma-separated, blank to skip): ")
+        val tagInput = scanner.nextLine().trim()
+        val tags = if (tagInput.isEmpty()) emptySet() else
+            tagInput.split(",")
+                .map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+
+        print("Internal notes (blank to skip): ")
+        val notes = scanner.nextLine().trim().ifEmpty { null }
+
+        print("External/internal reference (blank to skip): ")
+        val reference = scanner.nextLine().trim().ifEmpty { null }
+
+        val result = validator.validateNewBooking(
+            name, date, startTime, duration, description, tags, reference
+        )
         if (!result.valid) {
             println("Validation failed:")
             result.errors.forEach { println("  - $it") }
@@ -180,7 +196,10 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
         }
 
         try {
-            val booking = service.createBooking(name, date, startTime, duration, description)
+            val booking = service.createBooking(
+                name, date, startTime, duration, description,
+                tags = tags, notes = notes, internalReference = reference
+            )
             println("Booking created: $booking")
             notifications.dispatch(NotificationEvent.BookingCreated(booking))
         } catch (e: IllegalArgumentException) {
@@ -465,42 +484,19 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
             filter.byCustomer(customerInput)
         }
 
-        print("Min duration in minutes? (blank to skip): ")
-        val minDurInput = scanner.nextLine().trim()
-        if (minDurInput.isNotEmpty()) {
-            minDurInput.toIntOrNull()?.let { filter.byMinDuration(it) }
-                ?: println("Invalid number, skipping min-duration filter.")
+        print("Tag (must contain, blank to skip): ")
+        val tagInput = scanner.nextLine().trim()
+        if (tagInput.isNotEmpty()) {
+            filter.byTag(tagInput)
         }
 
-        print("Max duration in minutes? (blank to skip): ")
-        val maxDurInput = scanner.nextLine().trim()
-        if (maxDurInput.isNotEmpty()) {
-            maxDurInput.toIntOrNull()?.let { filter.byMaxDuration(it) }
-                ?: println("Invalid number, skipping max-duration filter.")
+        print("Internal reference contains? (blank to skip): ")
+        val refInput = scanner.nextLine().trim()
+        if (refInput.isNotEmpty()) {
+            filter.byInternalReference(refInput)
         }
 
-        print("Price range? (min,max or blank to skip): ")
-        val priceInput = scanner.nextLine().trim()
-        if (priceInput.isNotEmpty()) {
-            val parts = priceInput.split(",").map { it.trim() }
-            if (parts.size == 2) {
-                val pMin = parts[0].toDoubleOrNull()
-                val pMax = parts[1].toDoubleOrNull()
-                try {
-                    filter.byPriceRange(pMin, pMax)
-                } catch (e: IllegalArgumentException) {
-                    println("Invalid range: ${e.message}")
-                }
-            } else {
-                println("Expected min,max — skipping price filter.")
-            }
-        }
-
-        print("Customer type? (REGULAR/VIP/CORPORATE or blank): ")
-        val typeInput = scanner.nextLine().trim()
-        if (typeInput.isNotEmpty()) filter.byCustomerType(typeInput)
-
-        print("Sort by? (date/customer/status/duration/price, default date): ")
+        print("Sort by? (date/customer/status, default date): ")
         val sortInput = scanner.nextLine().trim().lowercase()
         val sortField = when (sortInput) {
             "customer" -> BookingFilter.SortField.CUSTOMER_NAME

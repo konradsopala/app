@@ -24,12 +24,8 @@ class BookingFilter(bookings: List<Booking>) {
     private var fromDate: LocalDate? = null
     private var toDate: LocalDate? = null
     private var customerPattern: String? = null
-    private var minDurationMinutes: Int? = null
-    private var maxDurationMinutes: Int? = null
-    private var minPrice: Double? = null
-    private var maxPrice: Double? = null
-    private var customerTypeFilter: String? = null
-    private var requireQuoted: Boolean = false
+    private var requiredTags: MutableSet<String> = mutableSetOf()
+    private var referencePattern: String? = null
     private var sortField: SortField = SortField.DATE
     private var ascending: Boolean = true
     private var limit: Int = 0
@@ -48,42 +44,22 @@ class BookingFilter(bookings: List<Booking>) {
 
     fun byCustomer(pattern: String): BookingFilter { customerPattern = pattern; return this }
 
-    /** Keep only bookings whose duration is at least [minutes] minutes. */
-    fun byMinDuration(minutes: Int): BookingFilter {
-        require(minutes >= 0) { "minutes must be >= 0" }
-        minDurationMinutes = minutes
-        return this
-    }
-
-    /** Keep only bookings whose duration is at most [minutes] minutes. */
-    fun byMaxDuration(minutes: Int): BookingFilter {
-        require(minutes >= 0) { "minutes must be >= 0" }
-        maxDurationMinutes = minutes
-        return this
-    }
-
     /**
-     * Keep only bookings with a quote whose total is in [min, max] (inclusive).
-     * Either bound can be null to leave that side open. Bookings without a
-     * quote are excluded — combining this with [requireQuoted] is redundant.
+     * Keep only bookings that carry [tag] (case-insensitive). Multiple
+     * calls AND-compose — `byTag("private").byTag("vip")` matches only
+     * bookings that have **both** tags.
      */
-    fun byPriceRange(min: Double? = null, max: Double? = null): BookingFilter {
-        if (min != null && max != null) {
-            require(min <= max) { "min ($min) must be <= max ($max)" }
-        }
-        minPrice = min
-        maxPrice = max
+    fun byTag(tag: String): BookingFilter {
+        val normalised = tag.trim().lowercase()
+        if (normalised.isNotEmpty()) requiredTags.add(normalised)
         return this
     }
 
-    /** Keep only bookings whose attached quote is for [type] (REGULAR/VIP/CORPORATE, case-insensitive). */
-    fun byCustomerType(type: String): BookingFilter {
-        customerTypeFilter = type.trim().uppercase()
+    /** Keep only bookings whose [Booking.internalReference] contains [pattern] (case-insensitive). */
+    fun byInternalReference(pattern: String): BookingFilter {
+        referencePattern = pattern
         return this
     }
-
-    /** Keep only bookings that have any quote attached (regardless of total). */
-    fun onlyQuoted(): BookingFilter { requireQuoted = true; return this }
 
     fun sortBy(field: SortField, ascending: Boolean): BookingFilter {
         this.sortField = field
@@ -111,23 +87,15 @@ class BookingFilter(bookings: List<Booking>) {
             val lower = pattern.lowercase()
             result = result.filter { it.customerName.lowercase().contains(lower) }
         }
-        minDurationMinutes?.let { min ->
-            result = result.filter { it.durationMinutes >= min }
+        if (requiredTags.isNotEmpty()) {
+            result = result.filter { booking ->
+                // Booking.tags is already normalised to lower-case on add.
+                requiredTags.all { it in booking.tags }
+            }
         }
-        maxDurationMinutes?.let { max ->
-            result = result.filter { it.durationMinutes <= max }
-        }
-        if (requireQuoted || minPrice != null || maxPrice != null || customerTypeFilter != null) {
-            result = result.filter { it.quote != null }
-        }
-        minPrice?.let { min ->
-            result = result.filter { (it.quote?.total ?: Double.NEGATIVE_INFINITY) >= min }
-        }
-        maxPrice?.let { max ->
-            result = result.filter { (it.quote?.total ?: Double.POSITIVE_INFINITY) <= max }
-        }
-        customerTypeFilter?.let { t ->
-            result = result.filter { it.quote?.customerType == t }
+        referencePattern?.takeIf { it.isNotBlank() }?.let { pattern ->
+            val lower = pattern.lowercase()
+            result = result.filter { it.internalReference?.lowercase()?.contains(lower) == true }
         }
 
         val comparator: Comparator<Booking> = when (sortField) {
