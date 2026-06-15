@@ -16,7 +16,7 @@ import java.util.Objects
 class BookingFilter(bookings: List<Booking>) {
 
     enum class SortField {
-        DATE, CUSTOMER_NAME, STATUS
+        DATE, CUSTOMER_NAME, STATUS, DURATION, PRICE
     }
 
     private val source: List<Booking> = bookings.toList()
@@ -102,6 +102,10 @@ class BookingFilter(bookings: List<Booking>) {
             SortField.DATE -> compareBy { it.date }
             SortField.CUSTOMER_NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.customerName }
             SortField.STATUS -> compareBy { it.status.name }
+            SortField.DURATION -> compareBy { it.durationMinutes }
+            // Sort unquoted bookings last when ascending, first when descending,
+            // by pushing them to +Infinity for the comparator's natural order.
+            SortField.PRICE -> compareBy { it.quote?.total ?: Double.POSITIVE_INFINITY }
         }
         val finalComparator = if (ascending) comparator else comparator.reversed()
         var sorted = result.sortedWith(finalComparator)
