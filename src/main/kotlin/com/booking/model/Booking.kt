@@ -39,18 +39,35 @@ class Booking(
     notes: String? = null,
     internalReference: String? = null,
     customerId: String? = null,
-    resourceId: String? = null
+    resourceId: String? = null,
+    /**
+     * Optional id override. Default callers should not pass this — a UUID
+     * is generated. Snapshot restore passes the persisted id so booking
+     * references (audit log, customer linkage, etc.) keep resolving.
+     */
+    id: String? = null
 ) {
     enum class Status {
         CONFIRMED, CANCELLED
     }
 
-    val id: String = UUID.randomUUID().toString()
+    val id: String = id ?: UUID.randomUUID().toString()
     var status: Status = Status.CONFIRMED
         private set
 
     var quote: Quote? = null
         internal set
+
+    /**
+     * Restore status + quote from a persisted snapshot. The default
+     * constructor always lands a booking in CONFIRMED with no quote;
+     * this lets the persistence layer bring those back to their saved
+     * values without re-running cancel() / attachQuote() side effects.
+     */
+    internal fun restoreState(status: Status, quote: Quote?) {
+        this.status = status
+        this.quote = quote
+    }
 
     /**
      * Mutable copy so addTag/removeTag can edit it without recreating the

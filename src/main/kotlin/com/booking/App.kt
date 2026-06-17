@@ -18,6 +18,7 @@ import com.booking.service.MockPaymentProcessor
 import com.booking.service.PaymentService
 import com.booking.service.RecurringBookingService
 import com.booking.service.ReportGenerator
+import com.booking.persistence.SnapshotStore
 import com.booking.service.StatisticsService
 import com.booking.service.WaitlistService
 import com.booking.util.BookingFilter
@@ -43,6 +44,7 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
     private val payments = PaymentService(service, MockPaymentProcessor())
     private val ical = ICalExporter(service, customerDirectory = customers)
     private val stats = StatisticsService(service)
+    private val snapshots = SnapshotStore(service, customers, pricer.couponRegistry, payments, waitlist)
     private val notifications = NotificationDispatcher().apply {
         register(ConsoleNotifier())
         // Email and SMS are wired up but disabled by default — flip them on
@@ -84,7 +86,9 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
                 |24) Manage notification channels
                 |25) Manage customer notification preferences
                 |26) Manage coupons (${pricer.couponRegistry.size()})
-                |27) Exit
+                |27) Save snapshot
+                |28) Load snapshot
+                |29) Exit
             """.trimMargin())
             print("\nChoice: ")
 
@@ -115,7 +119,9 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
                 "24" -> manageNotificationChannels()
                 "25" -> manageCustomerPreferences()
                 "26" -> manageCoupons()
-                "27" -> { println("Goodbye!"); return }
+                "27" -> saveSnapshot()
+                "28" -> loadSnapshot()
+                "29" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
         }
@@ -1056,6 +1062,39 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
         print("Code: ")
         val code = scanner.nextLine().trim()
         if (pricer.couponRegistry.delete(code)) println("Deleted.") else println("Unknown coupon.")
+    }
+
+    // ── 27. Save snapshot ─────────────────────────────────────────
+
+    private fun saveSnapshot() {
+        print("File path (default: snapshot.json): ")
+        val path = scanner.nextLine().trim().ifEmpty { "snapshot.json" }
+        try {
+            snapshots.save(path)
+            println("Saved to $path")
+        } catch (e: Exception) {
+            println("Save failed: ${e.message}")
+        }
+    }
+
+    // ── 28. Load snapshot ─────────────────────────────────────────
+
+    private fun loadSnapshot() {
+        print("File path (default: snapshot.json): ")
+        val path = scanner.nextLine().trim().ifEmpty { "snapshot.json" }
+        println("⚠ Loading replaces all in-memory state.")
+        print("Continue? (y/N): ")
+        if (!scanner.nextLine().trim().equals("y", ignoreCase = true)) {
+            println("Cancelled.")
+            return
+        }
+        try {
+            snapshots.load(path)
+            println("Loaded from $path: ${service.listBookings().size} booking(s), " +
+                "${customers.size()} customer(s), ${service.resources.size()} resource(s)")
+        } catch (e: Exception) {
+            println("Load failed: ${e.message}")
+        }
     }
 
     /**

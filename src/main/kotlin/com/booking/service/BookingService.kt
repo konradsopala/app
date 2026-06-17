@@ -23,6 +23,17 @@ import java.time.LocalTime
 class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
 
     private val bookings = linkedMapOf<String, Booking>()
+
+    /**
+     * Replace the in-memory booking map. Used by snapshot restore —
+     * the snapshot is the source of truth and pre-existing bookings
+     * are dropped wholesale. [BookingService.findBooking] / listBookings
+     * see the new state on the next call.
+     */
+    internal fun replaceBookings(newBookings: List<Booking>) {
+        bookings.clear()
+        for (b in newBookings) bookings[b.id] = b
+    }
     val auditLog = AuditLog()
     val resources: ResourceService = ResourceService(config, auditLog)
 
