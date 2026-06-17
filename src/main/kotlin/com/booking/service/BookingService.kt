@@ -223,7 +223,8 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
     fun exportToCsv(filePath: String) {
         PrintWriter(FileWriter(filePath)).use { writer ->
             writer.println(
-                "id,customer,date,start,end,description,status,quote_total,tags,notes,internal_ref"
+                "id,customer,date,start,end,description,status,quote_total," +
+                    "tags,notes,internal_ref,resource_id"
             )
             for (b in bookings.values) {
                 val quoteTotal = b.quote?.let { "%.2f".format(it.total) } ?: ""
@@ -232,13 +233,14 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
                 // a downstream parser can split on `;` cheaply).
                 val tagsField = b.tags.sorted().joinToString(";")
                 writer.printf(
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
                     escape(b.id), escape(b.customerName),
                     b.date, b.startTime, b.endTime,
                     escape(b.description), b.status, quoteTotal,
                     escape(tagsField),
                     escape(b.notes ?: ""),
-                    escape(b.internalReference ?: "")
+                    escape(b.internalReference ?: ""),
+                    escape(b.resourceId ?: "")
                 )
             }
         }
