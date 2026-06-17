@@ -86,8 +86,47 @@ class ICalExporter(
         appendLine(sb, "DESCRIPTION:${escapeText(descriptionFor(b))}")
         appendLine(sb, "ORGANIZER;CN=${escapeParam(b.customerName)}:mailto:noreply@booking-system.local")
         appendLine(sb, "STATUS:${if (b.status == Booking.Status.CONFIRMED) "CONFIRMED" else "CANCELLED"}")
-        b.seriesId?.let { appendLine(sb, "CATEGORIES:SERIES-$it") }
+        // LOCATION carries the human-readable resource name when the booking
+        // is bound to a registered resource. Unlinked bookings (or stale
+        // resource ids) skip the line rather than emit an empty one.
+        locationFor(b)?.let { appendLine(sb, "LOCATION:${escapeText(it)}") }
+        appendCategories(sb, b)
+        // Internal reference goes out as an X- (custom) property; RFC 5545
+        // §3.8.8.2 allows these and most clients ignore them silently.
+        b.internalReference?.let {
+            appendLine(sb, "X-BOOKING-REF:${escapeText(it)}")
+        }
         appendLine(sb, "END:VEVENT")
+    }
+
+    /**
+     * Emit a CATEGORIES line combining tags and the series id, if any.
+     * The series tag stays prefixed with `SERIES-` so calendar clients
+     * can tell free-form tags apart from system-derived ones.
+     *
+     * NOTE: staff-only [Booking.notes] is intentionally NOT included in
+     * either DESCRIPTION or CATEGORIES — the .ics is the customer-visible
+     * artefact and internal notes should not leak into it.
+     */
+    private fun appendCategories(sb: StringBuilder, b: Booking) {
+        val parts = mutableListOf<String>()
+        parts.addAll(b.tags.sorted())
+        b.seriesId?.let { parts.add("SERIES-$it") }
+        if (parts.isEmpty()) return
+        // Each category is escaped individually; commas inside a category
+        // name would otherwise be mis-parsed as separators.
+        appendLine(sb, "CATEGORIES:" + parts.joinToString(",") { escapeText(it) })
+    }
+
+    /**
+     * Resolve the resource's human-readable name from its id, or null
+     * when the booking isn't bound to a registered resource. Stale ids
+     * (resource deleted after the booking landed) are treated as
+     * "no resource" rather than crashing the export.
+     */
+    private fun locationFor(b: Booking): String? {
+        val resourceId = b.resourceId ?: return null
+        return service.resources.find(resourceId)?.name
     }
 
     private fun summaryFor(b: Booking): String {
