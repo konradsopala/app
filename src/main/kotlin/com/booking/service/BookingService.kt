@@ -60,7 +60,8 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
         tags: Set<String> = emptySet(),
         notes: String? = null,
         internalReference: String? = null,
-        customerId: String? = null
+        customerId: String? = null,
+        resourceId: String? = null
     ): Booking {
         require(!date.isBefore(LocalDate.now())) { "Booking date cannot be in the past." }
         require(durationMinutes > 0) { "Duration must be positive." }
@@ -74,17 +75,18 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
         }
         val booking = Booking(
             customerName, date, startTime, durationMinutes, description, seriesId,
-            tags, notes, internalReference, customerId
+            tags, notes, internalReference, customerId, resourceId
         )
         bookings[booking.id] = booking
         val seriesNote = seriesId?.let { ", Series: $it" } ?: ""
         val tagsNote = if (booking.tags.isEmpty()) "" else ", Tags: ${booking.tags.sorted()}"
         val refNote = internalReference?.let { ", Ref: $it" } ?: ""
         val customerNote = customerId?.let { ", CustomerId: $it" } ?: ""
+        val resourceNote = resourceId?.let { ", Resource: $it" } ?: ""
         auditLog.log(
             booking.id, AuditLog.Action.CREATED,
             "Customer: $customerName, Date: $date ${booking.startTime}-${booking.endTime}" +
-                "$seriesNote$tagsNote$refNote$customerNote"
+                "$seriesNote$tagsNote$refNote$customerNote$resourceNote"
         )
         return booking
     }
@@ -241,7 +243,7 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
         PrintWriter(FileWriter(filePath)).use { writer ->
             writer.println(
                 "id,customer,date,start,end,description,status,quote_total," +
-                    "tags,notes,internal_ref,customer_id"
+                    "tags,notes,internal_ref,customer_id,resource_id"
             )
             for (b in bookings.values) {
                 val quoteTotal = b.quote?.let { "%.2f".format(it.total) } ?: ""
@@ -250,14 +252,15 @@ class BookingService(private val config: AppConfig = AppConfig.DEFAULT) {
                 // a downstream parser can split on `;` cheaply).
                 val tagsField = b.tags.sorted().joinToString(";")
                 writer.printf(
-                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
                     escape(b.id), escape(b.customerName),
                     b.date, b.startTime, b.endTime,
                     escape(b.description), b.status, quoteTotal,
                     escape(tagsField),
                     escape(b.notes ?: ""),
                     escape(b.internalReference ?: ""),
-                    escape(b.customerId ?: "")
+                    escape(b.customerId ?: ""),
+                    escape(b.resourceId ?: "")
                 )
             }
         }

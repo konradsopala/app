@@ -1057,4 +1057,27 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
         val code = scanner.nextLine().trim()
         if (pricer.couponRegistry.delete(code)) println("Deleted.") else println("Unknown coupon.")
     }
+
+    /**
+     * Ask the operator which resource the booking should live on.
+     *
+     * Returns the chosen resource id, or null to let the booking land on
+     * the system default. Skips the prompt entirely when only one resource
+     * is registered (the default), since the answer is forced.
+     */
+    private fun promptForResource(): String? {
+        val all = service.resources.list()
+        if (all.size <= 1) return null
+        println("Resources:")
+        all.forEachIndexed { i, r -> println("  ${i + 1}) $r") }
+        print("Pick a resource (number, blank for default): ")
+        val input = scanner.nextLine().trim()
+        if (input.isEmpty()) return null
+        val idx = input.toIntOrNull()
+        if (idx == null || idx !in 1..all.size) {
+            println("Invalid selection, using default resource.")
+            return null
+        }
+        return all[idx - 1].id
+    }
 }
