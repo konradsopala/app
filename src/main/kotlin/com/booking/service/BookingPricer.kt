@@ -7,7 +7,14 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-class BookingPricer(private val service: BookingService) {
+class BookingPricer(
+    private val service: BookingService,
+    private val coupons: CouponService = CouponService(service.auditLog)
+) {
+
+    /** Exposed so callers (e.g. App.kt) can manage the same coupon registry. */
+    val couponRegistry: CouponService get() = coupons
+
 
     fun calculateAndPrintAndMaybeSave(
         bookingId: String,
@@ -170,33 +177,14 @@ class BookingPricer(private val service: BookingService) {
         }
         price = price - (price * loyaltyDiscount)
 
-        if (couponCode != null && couponCode.isNotEmpty()) {
-            val c = couponCode.trim().uppercase()
-            if (c == "SAVE10") {
-                price = price - 10.0
-            } else if (c == "SAVE20") {
-                price = price - 20.0
-            } else if (c == "HALF") {
-                price = price / 2.0
-            } else if (c == "VIP100" && normalizedCustomerType == "VIP") {
-                price = price - 100.0
-            } else if (c.startsWith("PCT")) {
-                try {
-                    val pct = c.substring(3).toInt()
-                    if (pct in 1..50) {
-                        price = price - (price * (pct / 100.0))
-                    }
-                } catch (e: NumberFormatException) {
-                }
-            } else if (c.startsWith("FLAT")) {
-                try {
-                    val flat = c.substring(4).toDouble()
-                    if (flat in 1.0..200.0) {
-                        price = price - flat
-                    }
-                } catch (e: NumberFormatException) {
-                }
-            }
+        // Coupon redemption is delegated to CouponService so the rules
+        // (validity window, max uses, customer-type guard) live in one
+        // place and can be edited via the CLI. Unknown codes and rejected
+        // redemptions leave [price] unchanged but the result still tells
+        // us what happened, so a follow-on caller could surface it.
+        if (!couponCode.isNullOrEmpty()) {
+            val redemption = coupons.tryApply(price, couponCode, normalizedCustomerType)
+            price = redemption.newPrice
         }
 
         if (prepay) {

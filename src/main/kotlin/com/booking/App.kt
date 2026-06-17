@@ -82,7 +82,7 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
                 |23) Export to iCalendar (.ics)
                 |24) Manage notification channels
                 |25) Manage customer notification preferences
-                |26) Manage resources (${service.resources.size()})
+                |26) Manage coupons (${pricer.couponRegistry.size()})
                 |27) Exit
             """.trimMargin())
             print("\nChoice: ")
@@ -113,7 +113,7 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
                 "23" -> exportICal()
                 "24" -> manageNotificationChannels()
                 "25" -> manageCustomerPreferences()
-                "26" -> manageResources()
+                "26" -> manageCoupons()
                 "27" -> { println("Goodbye!"); return }
                 else -> println("Invalid choice.")
             }
@@ -953,69 +953,100 @@ class App(private val config: AppConfig = AppConfig.DEFAULT) {
         println("Channel '$name' is now ${if (!wasEnabled) "ENABLED" else "DISABLED"}.")
     }
 
-    // ── 26. Manage resources ──────────────────────────────────────
+    // ── 26. Coupon management ──────────────────────────────────────
 
-    private fun manageResources() {
+    private fun manageCoupons() {
         println("""
-            Resources:
+            Coupons:
               a) List
-              b) Add a resource
-              c) Set capacity on a resource
-              d) Delete a resource
+              b) Create flat-amount coupon
+              c) Create percent coupon
+              d) Delete
               (blank) cancel
         """.trimIndent())
         print("Choice: ")
         when (scanner.nextLine().trim().lowercase()) {
-            "a" -> listResources()
-            "b" -> addResource()
-            "c" -> setResourceCapacity()
-            "d" -> deleteResource()
+            "a" -> listCoupons()
+            "b" -> createCoupon(percent = false)
+            "c" -> createCoupon(percent = true)
+            "d" -> deleteCoupon()
             "" -> {}
             else -> println("Invalid choice.")
         }
     }
 
-    private fun listResources() {
-        val all = service.resources.list()
-        if (all.isEmpty()) { println("No resources registered."); return }
+    private fun listCoupons() {
+        val all = pricer.couponRegistry.list()
+        if (all.isEmpty()) { println("No coupons registered."); return }
         all.forEach(::println)
     }
 
-    private fun addResource() {
-        print("Name: ")
-        val name = scanner.nextLine().trim()
-        if (name.isEmpty()) { println("Name cannot be empty."); return }
-        print("Capacity (default 1): ")
-        val capInput = scanner.nextLine().trim()
-        val capacity = if (capInput.isEmpty()) 1 else capInput.toIntOrNull() ?: run {
-            println("Capacity must be a number."); return
+    private fun createCoupon(percent: Boolean) {
+        print("Code: ")
+        val code = scanner.nextLine().trim()
+        if (code.isEmpty()) { println("Code cannot be empty."); return }
+
+        val discount = if (percent) {
+            print("Percent off (1-100): ")
+            val pct = scanner.nextLine().trim().toIntOrNull() ?: run {
+                println("Must be a number."); return
+            }
+            try {
+                com.booking.model.CouponDiscount.Percent(pct)
+            } catch (e: IllegalArgumentException) {
+                println("Error: ${e.message}"); return
+            }
+        } else {
+            print("Flat amount off: ")
+            val amount = scanner.nextLine().trim().toDoubleOrNull() ?: run {
+                println("Must be a number."); return
+            }
+            try {
+                com.booking.model.CouponDiscount.Flat(amount)
+            } catch (e: IllegalArgumentException) {
+                println("Error: ${e.message}"); return
+            }
         }
+
+        print("Valid from (YYYY-MM-DD, blank for none): ")
+        val fromInput = scanner.nextLine().trim()
+        val validFrom = if (fromInput.isEmpty()) null else try {
+            LocalDate.parse(fromInput)
+        } catch (e: DateTimeParseException) {
+            println("Invalid date."); return
+        }
+
+        print("Valid until (YYYY-MM-DD, blank for none): ")
+        val untilInput = scanner.nextLine().trim()
+        val validUntil = if (untilInput.isEmpty()) null else try {
+            LocalDate.parse(untilInput)
+        } catch (e: DateTimeParseException) {
+            println("Invalid date."); return
+        }
+
+        print("Max uses (blank for unlimited): ")
+        val maxUsesInput = scanner.nextLine().trim()
+        val maxUses = if (maxUsesInput.isEmpty()) null else maxUsesInput.toIntOrNull() ?: run {
+            println("Must be a number."); return
+        }
+
+        print("Restrict to customer type (REGULAR/VIP/CORPORATE, blank for any): ")
+        val type = scanner.nextLine().trim().ifEmpty { null }
+
         try {
-            val r = service.resources.register(name, capacity)
-            println("Registered: $r")
+            val coupon = com.booking.model.Coupon(
+                code, discount, validFrom, validUntil, maxUses, type
+            )
+            pricer.couponRegistry.register(coupon)
+            println("Registered: $coupon")
         } catch (e: IllegalArgumentException) {
             println("Error: ${e.message}")
         }
     }
 
-    private fun setResourceCapacity() {
-        print("Resource ID: ")
-        val id = scanner.nextLine().trim()
-        print("New capacity: ")
-        val capacity = scanner.nextLine().trim().toIntOrNull() ?: run {
-            println("Capacity must be a number."); return
-        }
-        try {
-            val updated = service.resources.setCapacity(id, capacity)
-            if (updated == null) println("Unknown resource.") else println("Updated: $updated")
-        } catch (e: IllegalArgumentException) {
-            println("Error: ${e.message}")
-        }
-    }
-
-    private fun deleteResource() {
-        print("Resource ID: ")
-        val id = scanner.nextLine().trim()
-        if (service.resources.delete(id)) println("Deleted.") else println("Unknown resource.")
+    private fun deleteCoupon() {
+        print("Code: ")
+        val code = scanner.nextLine().trim()
+        if (pricer.couponRegistry.delete(code)) println("Deleted.") else println("Unknown coupon.")
     }
 }
